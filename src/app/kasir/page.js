@@ -20,7 +20,7 @@ export default function Kasir() {
   const [barangPilihan, setBarangPilihan] = useState("");
   const [keranjang, setKeranjang] = useState([]);
   const [hargaJual, setHargaJual] = useState("");
-  const [metodeBayar, setMetodeBayar] = useState("BCA");
+  const [metodeBayar, setMetodeBayar] = useState("Transfer BCA"); 
 
   const tambahKeKeranjang = () => {
     if (!barangPilihan) return;
@@ -58,18 +58,17 @@ export default function Kasir() {
     localStorage.setItem('db_getmoiclothes', JSON.stringify(databaseGudang));
     setDbBarang(databaseGudang.filter(b => b.stok > 0));
 
-    // BIKIN FORMAT NAMA GABUNGAN (Cth: A4+P1+P2)
     const gabunganKode = keranjang.map(i => i.kodeItem).join('+');
     const gabunganNama = keranjang.map(i => `1x ${i.namaBarang}`).join(' + ');
     
     const transaksiBaru = {
       id: Date.now(),
-      tanggal: new Date().toLocaleDateString('id-ID') + ' ' + new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}),
+      tanggal: new Date().toLocaleDateString('sv-SE') + ' ' + new Date().toLocaleTimeString('sv-SE', {hour: '2-digit', minute:'2-digit'}), 
       kodeItem: gabunganKode,
-      namaBarang: gabunganNama,
+      namaBarang: `${gabunganNama} [${metodeBayar}]`, 
       hargaModal: totalModal,
       hargaJual: Number(hargaJual),
-      qty: 1,
+      qty: 1, 
       profit: potensiProfit
     };
 
@@ -78,7 +77,7 @@ export default function Kasir() {
     localStorage.setItem('db_penjualan', JSON.stringify(dataUpdate));
 
     alert(`✅ Transaksi Berhasil!\nProfit: Rp ${potensiProfit.toLocaleString('id-ID')}`);
-    setKeranjang([]); setHargaJual(""); setMetodeBayar("BCA");
+    setKeranjang([]); setHargaJual(""); setMetodeBayar("Transfer BCA");
   };
 
   const handleTarikData = async () => {
@@ -123,7 +122,7 @@ export default function Kasir() {
               <h2 className="text-lg font-bold text-gray-800 mb-4 border-b border-pink-50 pb-2">📦 Keranjang Pesanan</h2>
               
               <div className="flex gap-3 mb-6">
-                <select value={barangPilihan} onChange={(e) => setBarangPilihan(e.target.value)} className="flex-1 bg-gray-50 border border-gray-200 p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-400 font-medium">
+                <select value={barangPilihan} onChange={(e) => setBarangPilihan(e.target.value)} className="flex-1 bg-gray-50 border border-gray-200 p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-400 font-medium text-sm">
                   <option value="">+ Tambah Baju / Packaging...</option>
                   {barangBelumDipilih.map(item => (
                     <option key={item.kodeItem} value={item.kodeItem}>[{item.kodeItem}] {item.namaBarang} - (Modal: Rp {(item.hargaModal || 0).toLocaleString('id-ID')})</option>
@@ -159,6 +158,17 @@ export default function Kasir() {
                 <span className="text-sm font-black text-gray-800">Rp {totalModal.toLocaleString('id-ID')}</span>
               </div>
               <div className="space-y-5">
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-gray-600">Metode Bayar</label>
+                  <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} className="w-full bg-gray-50 border border-gray-200 text-gray-900 font-bold p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-400 text-sm">
+                    <option value="Transfer BCA">Transfer BCA</option>
+                    <option value="Transfer Seabank">Transfer Seabank</option>
+                    <option value="Full Shopee">Full Shopee</option>
+                    <option value="Cash / Lainnya">Cash / Lainnya</option>
+                  </select>
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-gray-600">Harga Jual Akhir</label>
                   <div className="relative">
@@ -179,6 +189,46 @@ export default function Kasir() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* TABEL RIWAYAT PENJUALAN KASIR */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100 mt-6">
+          <div className="flex justify-between items-center mb-4 border-b border-pink-50 pb-2">
+            <h2 className="text-lg font-bold text-gray-800">🧾 Riwayat Penjualan Terakhir</h2>
+            <span className="text-xs font-bold text-pink-600 bg-pink-50 px-3 py-1 rounded-lg border border-pink-100">
+              Total Tercatat: {riwayatPenjualan.length} Trx
+            </span>
+          </div>
+          
+          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 bg-white z-10">
+                <tr className="bg-pink-50/90 text-gray-500 text-[10px] uppercase tracking-wider border-b border-pink-100 backdrop-blur-sm">
+                  <th className="p-4 rounded-tl-xl font-bold">Tanggal</th>
+                  <th className="p-4 font-bold">Kode Item</th>
+                  <th className="p-4 font-bold">Barang Terjual</th>
+                  <th className="p-4 font-bold">Total Jual</th>
+                  <th className="p-4 rounded-tr-xl font-bold">Profit</th>
+                </tr>
+              </thead>
+              <tbody className="text-gray-700 text-sm divide-y divide-gray-100">
+                {riwayatPenjualan.map((trx, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50 transition">
+                    <td className="p-4 text-xs font-medium text-gray-500 whitespace-nowrap">{trx.tanggal}</td>
+                    <td className="p-4 font-bold text-pink-600 text-xs whitespace-nowrap">{trx.kodeItem}</td>
+                    <td className="p-4 font-bold text-gray-800">{trx.namaBarang}</td>
+                    <td className="p-4 font-bold text-blue-600 whitespace-nowrap">Rp {(trx.hargaJual || 0).toLocaleString('id-ID')}</td>
+                    <td className="p-4 font-bold text-emerald-500 whitespace-nowrap">+ Rp {(trx.profit || 0).toLocaleString('id-ID')}</td>
+                  </tr>
+                ))}
+                {riwayatPenjualan.length === 0 && (
+                  <tr>
+                    <td colSpan="5" className="p-8 text-center text-gray-400 font-bold italic">Belum ada transaksi terekam.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 
