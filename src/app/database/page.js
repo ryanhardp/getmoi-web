@@ -8,26 +8,13 @@ export default function DatabaseAdmin() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadingTarik, setLoadingTarik] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [editingRow, setEditingRow] = useState(null); // Nyimpen baris ke berapa yg lagi diedit
+  const [editingRow, setEditingRow] = useState(null);
 
-  // 🚀 LOGIKA BARU: SEDOT DATA LANGSUNG DARI AWAN (SHEETS)
   const loadDataCloud = async () => {
     try {
       const res = await fetch('/api/gudang');
       const respon = await res.json();
-      
-      if (respon.success) {
-        // Otomatis nentuin kategori & status dari data awan
-        const parsedData = respon.data.map(item => {
-          const isPack = String(item.kodeItem).startsWith('P');
-          return {
-            ...item,
-            kategori: isPack ? 'Packaging' : 'Baju Thrifting',
-            status: item.stok === 0 && !isPack ? 'Sold Out' : (isPack && item.stok < 15 ? (item.stok === 0 ? 'Habis' : 'Menipis') : (isPack ? 'Aman' : 'Ready'))
-          };
-        });
-        setDaftarBarang(parsedData);
-      }
+      if (respon.success) setDaftarBarang(respon.data);
     } catch (error) {
       console.error("Gagal load dari awan:", error);
     }
@@ -35,18 +22,15 @@ export default function DatabaseAdmin() {
 
   useEffect(() => {
     const kamusTersimpan = localStorage.getItem('kamus_getmoiclothes');
-    // FIX BLOUSE: Blouse sekarang masuk A (Kemeja)
     if (kamusTersimpan) setKamusKode(JSON.parse(kamusTersimpan));
     else setKamusKode({ kemeja: 'A', inner: 'B', blouse: 'A', dress: 'D', cardigan: 'E', vest: 'F', packaging: 'P', plastik: 'P', print: 'P' });
     
-    // Langsung sedot data dari Google Sheets pas buka halaman
     loadDataCloud().then(() => setIsLoaded(true));
   }, []);
 
   useEffect(() => {
     if (isLoaded) {
       localStorage.setItem('kamus_getmoiclothes', JSON.stringify(kamusKode));
-      // Backup lokal aja buat jaga-jaga
       localStorage.setItem('db_getmoiclothes', JSON.stringify(daftarBarang)); 
     }
   }, [daftarBarang, kamusKode, isLoaded]);
@@ -58,7 +42,6 @@ export default function DatabaseAdmin() {
   const [stok, setStok] = useState(1);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  // LOGIKA BIKIN KODE BARANG NGELANJUTIN EXISTING DATA
   useEffect(() => {
     if (isEditMode) return; 
     if (inputNama.trim().length > 0) {
@@ -79,7 +62,6 @@ export default function DatabaseAdmin() {
     else if (kategori === 'Packaging' && stok === 1) setStok(100); 
   }, [inputNama, kategori, daftarBarang, isEditMode, kamusKode]);
 
-  // 🚀 FUNGSI SIMPAN/UPDATE KE GOOGLE SHEETS
   const handleSimpan = async () => {
     if (!inputNama.trim()) return; 
     setIsSaving(true);
@@ -97,11 +79,9 @@ export default function DatabaseAdmin() {
       if (respon.success) {
         alert(isEditMode ? "✅ Data berhasil di-update ke awan!" : "✅ Barang baru berhasil disimpen ke awan!");
         
-        // Simpan kamus kode baru kalau ada
         const kataPertama = inputNama.trim().split(' ')[0].toLowerCase();
         if (!isEditMode && !kamusKode[kataPertama]) setKamusKode(prev => ({ ...prev, [kataPertama]: kodeItem.charAt(0) }));
 
-        // Reset form & Refresh tabel
         setIsEditMode(false); setEditingRow(null);
         setInputNama(''); setInputModal(''); setStok(kategori === 'Baju Thrifting' ? 1 : 100);
         await loadDataCloud();
@@ -117,10 +97,9 @@ export default function DatabaseAdmin() {
   const handleEdit = (item) => {
     setIsEditMode(true); setKodeItem(item.kodeItem); setInputNama(item.namaBarang);
     setStok(item.stok); setInputModal(item.hargaModal || ''); setKategori(item.kategori || 'Baju Thrifting');
-    setEditingRow(item.row); // Simpan baris berapa yang diedit
+    setEditingRow(item.row);
   };
 
-  // 🚀 FUNGSI HAPUS LANGSUNG DARI GOOGLE SHEETS
   const handleHapus = async (item) => {
     const gas = confirm(`⚠️ Yakin mau hapus ${item.namaBarang} dari awan secara permanen?`);
     if (!gas) return;
@@ -145,20 +124,14 @@ export default function DatabaseAdmin() {
     setLoadingTarik(false);
   };
 
-  // NGURUTIN TABEL BIAR RAPI (Packaging -> Ready -> Sold Out)
+  // 🚀 LOGIKA SORTING BARU (PACKAGING -> TERBARU INPUT -> SOLD OUT)
   const getTabelRapih = () => {
-    const sortByKode = (a, b) => {
-      const prefixA = (a.kodeItem || '').replace(/[0-9]/g, '');
-      const numA = parseInt((a.kodeItem || '').replace(/[^0-9]/g, '') || 0);
-      const prefixB = (b.kodeItem || '').replace(/[0-9]/g, '');
-      const numB = parseInt((b.kodeItem || '').replace(/[^0-9]/g, '') || 0);
-      if (prefixA === prefixB) return numA - numB;
-      return prefixA.localeCompare(prefixB);
-    };
+    // Fungsi urut berdasar input paling baru (baris/row paling bawah di google sheet)
+    const sortByTerbaru = (a, b) => (b.row || 0) - (a.row || 0);
 
-    const packaging = daftarBarang.filter(item => item.kategori === 'Packaging' || (item.kodeItem && item.kodeItem.startsWith('P'))).sort(sortByKode);
-    const barangReady = daftarBarang.filter(item => item.kategori !== 'Packaging' && !(item.kodeItem && item.kodeItem.startsWith('P')) && item.status !== 'Sold Out' && item.status !== 'Habis').sort(sortByKode);
-    const barangSoldOut = daftarBarang.filter(item => item.kategori !== 'Packaging' && !(item.kodeItem && item.kodeItem.startsWith('P')) && (item.status === 'Sold Out' || item.status === 'Habis')).sort(sortByKode);
+    const packaging = daftarBarang.filter(item => item.kategori === 'Packaging' || (item.kodeItem && item.kodeItem.startsWith('P'))).sort(sortByTerbaru);
+    const barangReady = daftarBarang.filter(item => item.kategori !== 'Packaging' && !(item.kodeItem && item.kodeItem.startsWith('P')) && item.status !== 'Sold Out' && item.status !== 'Habis').sort(sortByTerbaru);
+    const barangSoldOut = daftarBarang.filter(item => item.kategori !== 'Packaging' && !(item.kodeItem && item.kodeItem.startsWith('P')) && (item.status === 'Sold Out' || item.status === 'Habis')).sort(sortByTerbaru);
     
     return [...packaging, ...barangReady, ...barangSoldOut];
   };
@@ -171,7 +144,6 @@ export default function DatabaseAdmin() {
     <main className="p-8 font-sans text-gray-800 max-w-7xl mx-auto">
       <div className="space-y-8">
 
-        {/* Header */}
         <div className="flex justify-between items-center bg-white p-4 px-6 rounded-2xl shadow-sm border border-pink-100">
           <div className="flex items-center gap-4">
             <Link href="/" className="p-2 bg-pink-50 rounded-xl shadow-sm hover:bg-pink-100 text-pink-600 transition font-medium text-sm">
@@ -186,7 +158,6 @@ export default function DatabaseAdmin() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          {/* Kolom Kiri: Form Input */}
           <div className="lg:col-span-4 bg-white p-6 rounded-3xl shadow-sm border border-pink-100 h-fit">
             <div className="flex justify-between items-center mb-4 border-b border-pink-50 pb-2">
               <h2 className="text-lg font-bold text-gray-800">{isEditMode ? '✏️ Edit Item' : '➕ Tambah Stok Baru'}</h2>
@@ -229,7 +200,6 @@ export default function DatabaseAdmin() {
             </div>
           </div>
 
-          {/* Kolom Kanan: Tabel */}
           <div className="lg:col-span-8 bg-white p-6 rounded-3xl shadow-sm border border-pink-100">
             <div className="flex justify-between items-center mb-4 border-b border-pink-50 pb-2">
               <h2 className="text-lg font-bold text-gray-800">🗄️ Master Data Barang</h2>
