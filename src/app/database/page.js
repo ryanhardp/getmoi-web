@@ -19,7 +19,6 @@ export default function DatabaseAdmin() {
         const parsedData = respon.data.map(item => {
           const isPack = String(item.kodeItem).startsWith('P');
           
-          // 🚀 FIX HARGA 0: Babat habis huruf "Rp" dan titik/koma, ambil angka murninya!
           const hargaBersih = Number(String(item.hargaModal).replace(/[^0-9]/g, '')) || 0;
           const stokBersih = Number(item.stok) || 0;
 
@@ -39,19 +38,18 @@ export default function DatabaseAdmin() {
   };
 
   useEffect(() => {
-    const kamusTersimpan = localStorage.getItem('kamus_getmoiclothes');
-    if (kamusTersimpan) setKamusKode(JSON.parse(kamusTersimpan));
-    else setKamusKode({ kemeja: 'A', inner: 'B', dress: 'D', cardigan: 'E', vest: 'F', packaging: 'P', plastik: 'P', print: 'P' });
+    // 🚀 FIX MEMORI SESAT: Gua paksa hapus kamus lama yang nyimpen Blouse = C
+    localStorage.removeItem('kamus_getmoiclothes');
+    setKamusKode({ kemeja: 'A', inner: 'B', dress: 'D', cardigan: 'E', vest: 'F', packaging: 'P', plastik: 'P', print: 'P' });
     
     loadDataCloud().then(() => setIsLoaded(true));
   }, []);
 
   useEffect(() => {
     if (isLoaded) {
-      localStorage.setItem('kamus_getmoiclothes', JSON.stringify(kamusKode));
       localStorage.setItem('db_getmoiclothes', JSON.stringify(daftarBarang)); 
     }
-  }, [daftarBarang, kamusKode, isLoaded]);
+  }, [daftarBarang, isLoaded]);
 
   const [inputNama, setInputNama] = useState('');
   const [kategori, setKategori] = useState('Baju Thrifting');
@@ -60,40 +58,33 @@ export default function DatabaseAdmin() {
   const [stok, setStok] = useState(1);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  // 🚀 FIX GENERATOR KODE: NGINTIP DATA EXISTING LU!
+  // 🚀 FIX GENERATOR KODE: Beneran 100% ngintip tabel lu sekarang!
   useEffect(() => {
     if (isEditMode) return; 
     if (inputNama.trim().length > 0) {
       const kataPertama = inputNama.trim().split(' ')[0].toLowerCase();
+      let prefix = '';
       
-      // 1. Cek dulu di data existing lu, kata ini kemaren pake huruf apa?
-      let prefixAkurat = '';
-      const barangSama = daftarBarang.find(b => b.namaBarang.toLowerCase().startsWith(kataPertama));
-      
+      // Nyari barang yang mengandung kata yg lu ketik di data existing
+      const barangSama = daftarBarang.find(b => b.namaBarang.toLowerCase().includes(kataPertama));
+
       if (barangSama && barangSama.kodeItem) {
-        // Kalo ketemu (misal Tshirt kemaren C5), ambil hurufnya aja -> 'C'
-        prefixAkurat = barangSama.kodeItem.replace(/[0-9]/g, '');
+        // Kalau nemu, ambil huruf depannya (Contoh nemu "Blouse merah bordir" = X5 -> Berarti X)
+        prefix = barangSama.kodeItem.replace(/[0-9]/g, '');
       } else {
-        // Kalo beneran barang baru, cek kamus atau default ke 'X'
-        prefixAkurat = kamusKode[kataPertama] || (kategori === 'Packaging' ? 'P' : 'X');
+        // Kalau barang beneran baru banget, ambil dari kamus atau default ke X
+        prefix = kamusKode[kataPertama] || (kategori === 'Packaging' ? 'P' : 'X');
       }
 
-      // Jaga-jaga kalau prefix kosong
-      if (!prefixAkurat) prefixAkurat = kategori === 'Packaging' ? 'P' : 'X';
-
-      // 2. Cari angka tertinggi buat huruf itu di seluruh tabel
-      const barangSejenis = daftarBarang.filter(item => item.kodeItem && item.kodeItem.startsWith(prefixAkurat));
+      const barangSejenis = daftarBarang.filter(item => item.kodeItem && item.kodeItem.startsWith(prefix));
       let angkaTertinggi = 0;
       barangSejenis.forEach(b => {
         const angka = parseInt(b.kodeItem.replace(/[^0-9]/g, '') || 0);
         if (angka > angkaTertinggi) angkaTertinggi = angka;
       });
 
-      // 3. Rakit jadi kode baru!
-      setKodeItem(`${prefixAkurat}${angkaTertinggi + 1}`);
-    } else { 
-      setKodeItem('---'); 
-    }
+      setKodeItem(`${prefix}${angkaTertinggi + 1}`);
+    } else { setKodeItem('---'); }
     
     if (kategori === 'Baju Thrifting') setStok(1); 
     else if (kategori === 'Packaging' && stok === 1) setStok(100); 
@@ -116,9 +107,6 @@ export default function DatabaseAdmin() {
       if (respon.success) {
         alert(isEditMode ? "✅ Data berhasil di-update ke awan!" : "✅ Barang baru berhasil disimpen ke awan!");
         
-        const kataPertama = inputNama.trim().split(' ')[0].toLowerCase();
-        if (!isEditMode && !kamusKode[kataPertama]) setKamusKode(prev => ({ ...prev, [kataPertama]: kodeItem.charAt(0) }));
-
         setIsEditMode(false); setEditingRow(null);
         setInputNama(''); setInputModal(''); setStok(kategori === 'Baju Thrifting' ? 1 : 100);
         await loadDataCloud();
@@ -161,15 +149,12 @@ export default function DatabaseAdmin() {
     setLoadingTarik(false);
   };
 
-  // 🚀 FIX SORTING: Langsung balik data dari yang terbaru diinput!
   const getTabelRapih = () => {
-    // 1. Balik data asli dari Google Sheets biar yang paling baru diinput (paling bawah) jadi di atas
     const dataDibalik = [...daftarBarang].reverse();
 
-    // 2. Filter berdasarkan kasta (Otomatis ngikutin urutan input terbaru)
     const packaging = dataDibalik.filter(item => item.kategori === 'Packaging');
-    const barangReady = dataDibalik.filter(item => item.kategori !== 'Packaging' && item.status !== 'Sold Out' && item.status !== 'Habis');
-    const barangSoldOut = dataDibalik.filter(item => item.kategori !== 'Packaging' && (item.status === 'Sold Out' || item.status === 'Habis'));
+    const barangReady = dataDibalik.filter(item => item.kategori !== 'Packaging' && item.status !== 'Sold Out');
+    const barangSoldOut = dataDibalik.filter(item => item.kategori !== 'Packaging' && item.status === 'Sold Out');
     
     return [...packaging, ...barangReady, ...barangSoldOut];
   };
