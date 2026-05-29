@@ -7,14 +7,27 @@ export default function Kasir() {
   const [riwayatPenjualan, setRiwayatPenjualan] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadingTarik, setLoadingTarik] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // 🚀 BACA GUDANG LANGSUNG DARI AWAN
+  const loadDataCloud = async () => {
+    try {
+      const [resGudang, resJual] = await Promise.all([
+        fetch('/api/gudang').then(r => r.json()),
+        fetch('/api/kasir').then(r => r.json())
+      ]);
+      // Cuma tampilin barang yang stoknya > 0 di Kasir
+      if(resGudang.success) setDbBarang(resGudang.data.filter(b => b.stok > 0)); 
+      if(resJual.success) setRiwayatPenjualan(resJual.data);
+    } catch (error) {
+      console.error("Gagal narik data:", error);
+    } finally {
+      setIsLoaded(true);
+    }
+  };
 
   useEffect(() => {
-    const dataGudang = JSON.parse(localStorage.getItem('db_getmoiclothes') || '[]');
-    setDbBarang(dataGudang.filter(b => b.stok > 0));
-
-    const dataJual = JSON.parse(localStorage.getItem('db_penjualan') || '[]');
-    setRiwayatPenjualan(dataJual);
-    setIsLoaded(true);
+    loadDataCloud();
   }, []);
 
   const [barangPilihan, setBarangPilihan] = useState("");
@@ -38,34 +51,15 @@ export default function Kasir() {
   const totalModal = keranjang.reduce((total, item) => total + (item.hargaModal || 0), 0);
   const potensiProfit = (Number(hargaJual) || 0) - totalModal;
 
-  // 🚀 FUNGSI BARU: Nembak langsung ke API Google Sheets 🚀
   const handleSimpanTransaksi = async () => {
     if (keranjang.length === 0) return alert("❌ Keranjang kosong bro!");
     if (!hargaJual) return alert("❌ Isi Harga Jual Akhir dulu bro!");
 
-    // Set Loading biar tombol gak diklik 2x
-    const tombol = document.activeElement;
-    if(tombol) tombol.innerText = "⏳ Sedang Menulis ke Sheets...";
-
-    // --- SEMENTARA: Kurangin stok di tampilan web dulu ---
-    let databaseGudang = JSON.parse(localStorage.getItem('db_getmoiclothes') || '[]');
-    keranjang.forEach(itemTerjual => {
-      const idx = databaseGudang.findIndex(b => b.kodeItem === itemTerjual.kodeItem);
-      if (idx !== -1) {
-        databaseGudang[idx].stok -= 1;
-        const sisa = databaseGudang[idx].stok;
-        const isPack = databaseGudang[idx].kategori === 'Packaging' || itemTerjual.kodeItem.startsWith('P');
-        databaseGudang[idx].status = isPack ? (sisa > 15 ? 'Aman' : sisa > 0 ? 'Menipis' : 'Habis') : (sisa > 0 ? 'Ready' : 'Sold Out');
-      }
-    });
-    localStorage.setItem('db_getmoiclothes', JSON.stringify(databaseGudang));
-    setDbBarang(databaseGudang.filter(b => b.stok > 0));
-    // ----------------------------------------------------
-
+    setIsSaving(true);
     const gabunganKode = keranjang.map(i => i.kodeItem).join('+');
     const gabunganNama = keranjang.map(i => `1x ${i.namaBarang}`).join(' + ');
     
-    // Siapin data buat dikirim ke awan
+    // Siapin data buat dikirim ke API
     const payload = {
       tanggal: new Date().toLocaleDateString('sv-SE') + ' ' + new Date().toLocaleTimeString('sv-SE', {hour: '2-digit', minute:'2-digit'}), 
       kodeItem: gabunganKode,
@@ -74,11 +68,11 @@ export default function Kasir() {
       hargaJual: Number(hargaJual),
       qty: keranjang.length, 
       profit: potensiProfit,
-      profitPersen: totalModal > 0 ? `${((potensiProfit/totalModal)*100).toFixed(1)}%` : "0%"
+      profitPersen: totalModal > 0 ? `${((potensiProfit/totalModal)*100).toFixed(1)}%` : "0%",
+      keranjang: keranjang // 🚀 Wajib dikirim biar backend bisa motong stok barang ini!
     };
 
     try {
-      // Nembak ke API buat nulis baris baru ke Google Sheets
       const res = await fetch('/api/kasir', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -88,46 +82,30 @@ export default function Kasir() {
       const respon = await res.json();
       
       if(respon.success) {
-        alert(`✅ Transaksi Berhasil Masuk ke Google Sheets!\nProfit: Rp ${potensiProfit.toLocaleString('id-ID')}`);
+        alert(`✅ Transaksi Berhasil!\nStok otomatis terpotong di Gudang!\nProfit: Rp ${potensiProfit.toLocaleString('id-ID')}`);
         setKeranjang([]); setHargaJual(""); setMetodeBayar("Transfer BCA");
         
-        // Otomatis tarik data terbaru dari Google Sheets biar tabel update
-        handleTarikData(true); 
+        // Refresh tabel kasir dan data barang
+        await loadDataCloud(); 
       } else {
         alert("❌ Gagal simpan ke Sheets: " + respon.error);
       }
     } catch (error) {
       alert("❌ Error sistem: " + error.message);
     } finally {
-      if(tombol) tombol.innerText = "Selesaikan Transaksi";
+      setIsSaving(false);
     }
   };
 
-  // Fungsi Tarik Data gue modif dikit biar bisa dipanggil otomatis
-  const handleTarikData = async (otomatis = false) => {
-    if (!otomatis) {
-      const gas = confirm("⚠️ Tarik data dari tab 'Penjualan' ke memori web?");
-      if (!gas) return;
-    }
-
+  const handleTarikData = async () => {
     setLoadingTarik(true);
-    try {
-      const res = await fetch('/api/kasir');
-      const respon = await res.json();
-      if (respon.success) {
-        setRiwayatPenjualan(respon.data);
-        localStorage.setItem('db_penjualan', JSON.stringify(respon.data));
-        if (!otomatis) alert(`✅ Suksessss! Ketarik ${respon.data.length} transaksi.`);
-      } else { 
-        if (!otomatis) alert("❌ Gagal: " + respon.error); 
-      }
-    } catch (error) { 
-      if (!otomatis) alert("❌ Error: " + error.message); 
-    }
+    await loadDataCloud();
+    alert("✅ Berhasil narik riwayat penjualan terbaru!");
     setLoadingTarik(false);
   };
 
-  const barangBelumDipilih = dbBarang.filter(b => !keranjang.some(k => k.kodeItem === b.kodeItem));
+  const barangBelumDipilih = dbBarang; 
+
   if (!isLoaded) return null;
 
   return (
@@ -140,8 +118,8 @@ export default function Kasir() {
             <Link href="/" className="p-2 bg-pink-50 rounded-xl shadow-sm hover:bg-pink-100 text-pink-600 transition font-medium text-sm">&larr; Kembali</Link>
             <h1 className="text-xl font-extrabold text-gray-900">Ruang Kasir</h1>
           </div>
-          <button onClick={() => handleTarikData(false)} disabled={loadingTarik} className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 font-bold rounded-xl hover:bg-blue-100 transition-all text-xs shadow-sm">
-            {loadingTarik ? '⏳ Menyedot...' : '☁️ Tarik Riwayat Penjualan'}
+          <button onClick={handleTarikData} disabled={loadingTarik} className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 font-bold rounded-xl hover:bg-blue-100 transition-all text-xs shadow-sm">
+            {loadingTarik ? '⏳ Menyedot...' : '🔄 Refresh Data Awan'}
           </button>
         </div>
 
@@ -214,8 +192,8 @@ export default function Kasir() {
                   </h3>
                 </div>
 
-                <button onClick={handleSimpanTransaksi} className="w-full mt-4 py-4 bg-pink-500 hover:bg-pink-600 text-white font-bold text-lg rounded-2xl shadow-lg shadow-pink-500/30 transition-all">
-                  Selesaikan Transaksi
+                <button onClick={handleSimpanTransaksi} disabled={isSaving} className="w-full mt-4 py-4 bg-pink-500 hover:bg-pink-600 text-white font-bold text-lg rounded-2xl shadow-lg shadow-pink-500/30 transition-all disabled:opacity-50">
+                  {isSaving ? '⏳ Menyimpan & Motong Stok...' : 'Selesaikan Transaksi'}
                 </button>
               </div>
             </div>
