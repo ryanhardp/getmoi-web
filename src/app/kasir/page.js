@@ -38,13 +38,17 @@ export default function Kasir() {
   const totalModal = keranjang.reduce((total, item) => total + (item.hargaModal || 0), 0);
   const potensiProfit = (Number(hargaJual) || 0) - totalModal;
 
-  const handleSimpanTransaksi = () => {
+  // 🚀 FUNGSI BARU: Nembak langsung ke API Google Sheets 🚀
+  const handleSimpanTransaksi = async () => {
     if (keranjang.length === 0) return alert("❌ Keranjang kosong bro!");
     if (!hargaJual) return alert("❌ Isi Harga Jual Akhir dulu bro!");
 
+    // Set Loading biar tombol gak diklik 2x
+    const tombol = document.activeElement;
+    if(tombol) tombol.innerText = "⏳ Sedang Menulis ke Sheets...";
+
+    // --- SEMENTARA: Kurangin stok di tampilan web dulu ---
     let databaseGudang = JSON.parse(localStorage.getItem('db_getmoiclothes') || '[]');
-    
-    // Kurangin Stok Gudang
     keranjang.forEach(itemTerjual => {
       const idx = databaseGudang.findIndex(b => b.kodeItem === itemTerjual.kodeItem);
       if (idx !== -1) {
@@ -54,35 +58,57 @@ export default function Kasir() {
         databaseGudang[idx].status = isPack ? (sisa > 15 ? 'Aman' : sisa > 0 ? 'Menipis' : 'Habis') : (sisa > 0 ? 'Ready' : 'Sold Out');
       }
     });
-
     localStorage.setItem('db_getmoiclothes', JSON.stringify(databaseGudang));
     setDbBarang(databaseGudang.filter(b => b.stok > 0));
+    // ----------------------------------------------------
 
     const gabunganKode = keranjang.map(i => i.kodeItem).join('+');
     const gabunganNama = keranjang.map(i => `1x ${i.namaBarang}`).join(' + ');
     
-    const transaksiBaru = {
-      id: Date.now(),
+    // Siapin data buat dikirim ke awan
+    const payload = {
       tanggal: new Date().toLocaleDateString('sv-SE') + ' ' + new Date().toLocaleTimeString('sv-SE', {hour: '2-digit', minute:'2-digit'}), 
       kodeItem: gabunganKode,
       namaBarang: `${gabunganNama} [${metodeBayar}]`, 
       hargaModal: totalModal,
       hargaJual: Number(hargaJual),
-      qty: 1, 
-      profit: potensiProfit
+      qty: keranjang.length, 
+      profit: potensiProfit,
+      profitPersen: totalModal > 0 ? `${((potensiProfit/totalModal)*100).toFixed(1)}%` : "0%"
     };
 
-    const dataUpdate = [transaksiBaru, ...riwayatPenjualan];
-    setRiwayatPenjualan(dataUpdate);
-    localStorage.setItem('db_penjualan', JSON.stringify(dataUpdate));
-
-    alert(`✅ Transaksi Berhasil!\nProfit: Rp ${potensiProfit.toLocaleString('id-ID')}`);
-    setKeranjang([]); setHargaJual(""); setMetodeBayar("Transfer BCA");
+    try {
+      // Nembak ke API buat nulis baris baru ke Google Sheets
+      const res = await fetch('/api/kasir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      const respon = await res.json();
+      
+      if(respon.success) {
+        alert(`✅ Transaksi Berhasil Masuk ke Google Sheets!\nProfit: Rp ${potensiProfit.toLocaleString('id-ID')}`);
+        setKeranjang([]); setHargaJual(""); setMetodeBayar("Transfer BCA");
+        
+        // Otomatis tarik data terbaru dari Google Sheets biar tabel update
+        handleTarikData(true); 
+      } else {
+        alert("❌ Gagal simpan ke Sheets: " + respon.error);
+      }
+    } catch (error) {
+      alert("❌ Error sistem: " + error.message);
+    } finally {
+      if(tombol) tombol.innerText = "Selesaikan Transaksi";
+    }
   };
 
-  const handleTarikData = async () => {
-    const gas = confirm("⚠️ Tarik data dari tab 'Penjualan' ke memori web?");
-    if (!gas) return;
+  // Fungsi Tarik Data gue modif dikit biar bisa dipanggil otomatis
+  const handleTarikData = async (otomatis = false) => {
+    if (!otomatis) {
+      const gas = confirm("⚠️ Tarik data dari tab 'Penjualan' ke memori web?");
+      if (!gas) return;
+    }
 
     setLoadingTarik(true);
     try {
@@ -91,9 +117,13 @@ export default function Kasir() {
       if (respon.success) {
         setRiwayatPenjualan(respon.data);
         localStorage.setItem('db_penjualan', JSON.stringify(respon.data));
-        alert(`✅ Suksessss! Ketarik ${respon.data.length} transaksi.`);
-      } else { alert("❌ Gagal: " + respon.error); }
-    } catch (error) { alert("❌ Error: " + error.message); }
+        if (!otomatis) alert(`✅ Suksessss! Ketarik ${respon.data.length} transaksi.`);
+      } else { 
+        if (!otomatis) alert("❌ Gagal: " + respon.error); 
+      }
+    } catch (error) { 
+      if (!otomatis) alert("❌ Error: " + error.message); 
+    }
     setLoadingTarik(false);
   };
 
@@ -110,7 +140,7 @@ export default function Kasir() {
             <Link href="/" className="p-2 bg-pink-50 rounded-xl shadow-sm hover:bg-pink-100 text-pink-600 transition font-medium text-sm">&larr; Kembali</Link>
             <h1 className="text-xl font-extrabold text-gray-900">Ruang Kasir</h1>
           </div>
-          <button onClick={handleTarikData} disabled={loadingTarik} className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 font-bold rounded-xl hover:bg-blue-100 transition-all text-xs shadow-sm">
+          <button onClick={() => handleTarikData(false)} disabled={loadingTarik} className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 font-bold rounded-xl hover:bg-blue-100 transition-all text-xs shadow-sm">
             {loadingTarik ? '⏳ Menyedot...' : '☁️ Tarik Riwayat Penjualan'}
           </button>
         </div>
