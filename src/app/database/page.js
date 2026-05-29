@@ -14,7 +14,25 @@ export default function DatabaseAdmin() {
     try {
       const res = await fetch('/api/gudang');
       const respon = await res.json();
-      if (respon.success) setDaftarBarang(respon.data);
+      
+      if (respon.success) {
+        const parsedData = respon.data.map(item => {
+          const isPack = String(item.kodeItem).startsWith('P');
+          
+          // 🚀 FIX HARGA 0: Babat habis huruf "Rp" dan titik/koma, ambil angka murninya!
+          const hargaBersih = Number(String(item.hargaModal).replace(/[^0-9]/g, '')) || 0;
+          const stokBersih = Number(item.stok) || 0;
+
+          return {
+            ...item,
+            hargaModal: hargaBersih,
+            stok: stokBersih,
+            kategori: isPack ? 'Packaging' : 'Baju Thrifting',
+            status: stokBersih === 0 && !isPack ? 'Sold Out' : (isPack && stokBersih < 15 ? (stokBersih === 0 ? 'Habis' : 'Menipis') : (isPack ? 'Aman' : 'Ready'))
+          };
+        });
+        setDaftarBarang(parsedData);
+      }
     } catch (error) {
       console.error("Gagal load dari awan:", error);
     }
@@ -124,14 +142,15 @@ export default function DatabaseAdmin() {
     setLoadingTarik(false);
   };
 
-  // 🚀 LOGIKA SORTING BARU (PACKAGING -> TERBARU INPUT -> SOLD OUT)
+  // 🚀 FIX SORTING: Langsung balik data dari yang terbaru diinput!
   const getTabelRapih = () => {
-    // Fungsi urut berdasar input paling baru (baris/row paling bawah di google sheet)
-    const sortByTerbaru = (a, b) => (b.row || 0) - (a.row || 0);
+    // 1. Balik data asli dari Google Sheets biar yang paling baru diinput (paling bawah) jadi di atas
+    const dataDibalik = [...daftarBarang].reverse();
 
-    const packaging = daftarBarang.filter(item => item.kategori === 'Packaging' || (item.kodeItem && item.kodeItem.startsWith('P'))).sort(sortByTerbaru);
-    const barangReady = daftarBarang.filter(item => item.kategori !== 'Packaging' && !(item.kodeItem && item.kodeItem.startsWith('P')) && item.status !== 'Sold Out' && item.status !== 'Habis').sort(sortByTerbaru);
-    const barangSoldOut = daftarBarang.filter(item => item.kategori !== 'Packaging' && !(item.kodeItem && item.kodeItem.startsWith('P')) && (item.status === 'Sold Out' || item.status === 'Habis')).sort(sortByTerbaru);
+    // 2. Filter berdasarkan kasta (Otomatis ngikutin urutan input terbaru)
+    const packaging = dataDibalik.filter(item => item.kategori === 'Packaging');
+    const barangReady = dataDibalik.filter(item => item.kategori !== 'Packaging' && item.status !== 'Sold Out');
+    const barangSoldOut = dataDibalik.filter(item => item.kategori !== 'Packaging' && item.status === 'Sold Out');
     
     return [...packaging, ...barangReady, ...barangSoldOut];
   };
