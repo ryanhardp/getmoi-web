@@ -10,14 +10,12 @@ export default function Home() {
   const [prive, setPrive] = useState(0); 
   const [labaKotor, setLabaKotor] = useState(0); 
   
-  // State nyimpen RAW Data buat diutak-atik di Modal P&L
   const [dataJualFull, setDataJualFull] = useState([]);
   const [dataOprFull, setDataOprFull] = useState([]);
   
   const [riwayatTransaksi, setRiwayatTransaksi] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
   
-  // State P&L Modal & Filter Tanggal
   const [showPnL, setShowPnL] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -46,7 +44,7 @@ export default function Home() {
         let opr = 0;
         let tarikUntung = 0;
         if(resOpr.success) {
-          setDataOprFull(resOpr.data); // Simpan mentahannya
+          setDataOprFull(resOpr.data); 
           resOpr.data.forEach(item => { 
             const ket = (item.keterangan || '').toLowerCase();
             if (ket.includes('prive') || ket.includes('bagi hasil') || ket.includes('reward')) {
@@ -61,7 +59,7 @@ export default function Home() {
 
         let profit = 0;
         if(resJual.success) {
-          setDataJualFull(resJual.data); // Simpan mentahannya
+          setDataJualFull(resJual.data); 
           resJual.data.forEach(trx => { 
             profit += (Number(trx.profit) || 0); 
           });
@@ -79,33 +77,41 @@ export default function Home() {
     tarikSemuaData();
   }, []);
 
-  // PERHITUNGAN GLOBAL DASHBOARD
   const labaBersih = labaKotor - operasional;
   const sisaKas = MODAL_AWAL - uangTertahan + labaBersih - prive;
 
-  // 🚀 LOGIKA FILTER TANGGAL BUAT P&L 🚀
   const isWithinRange = (dateStr) => {
-    if (!startDate && !endDate) return true;
-    const itemDate = new Date(dateStr.split(' ')[0]);
-    itemDate.setHours(0, 0, 0, 0);
-    
-    let isAfterStart = true;
-    let isBeforeEnd = true;
+    if (!startDate && !endDate) return true; 
+    if (!dateStr) return false; 
 
-    if (startDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      isAfterStart = itemDate >= start;
+    try {
+      const tanggalAja = dateStr.split(' ')[0];
+      if (!tanggalAja) return false; 
+
+      const itemDate = new Date(tanggalAja);
+      if (isNaN(itemDate.getTime())) return false; 
+      
+      itemDate.setHours(0, 0, 0, 0);
+
+      let isAfterStart = true;
+      let isBeforeEnd = true;
+
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        isAfterStart = itemDate >= start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        isBeforeEnd = itemDate <= end;
+      }
+      return isAfterStart && isBeforeEnd;
+    } catch (error) {
+      return false; 
     }
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      isBeforeEnd = itemDate <= end;
-    }
-    return isAfterStart && isBeforeEnd;
   };
 
-  // Nyuci Data Berdasarkan Tanggal Filter
   const filteredJual = dataJualFull.filter(trx => isWithinRange(trx.tanggal));
   const filteredOprFull = dataOprFull.filter(trx => isWithinRange(trx.tanggal));
 
@@ -118,7 +124,6 @@ export default function Home() {
     return (ket.includes('prive') || ket.includes('bagi hasil') || ket.includes('reward'));
   });
 
-  // Ngitung Totalan Khusus P&L yg udah difilter
   const pnlPendapatan = filteredJual.reduce((acc, curr) => acc + (Number(curr.hargaJual) || 0), 0);
   const pnlHPP = filteredJual.reduce((acc, curr) => acc + (Number(curr.hargaModal) || 0), 0);
   const pnlLabaKotor = pnlPendapatan - pnlHPP;
@@ -134,10 +139,9 @@ export default function Home() {
     <>
       {/* 🚀 MODAL LAPORAN P&L RINCI 🚀 */}
       {showPnL && (
-        <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto print:bg-white print:overflow-visible flex justify-center py-10 print:py-0">
-          <div className="bg-white w-full max-w-4xl min-h-[1056px] p-12 rounded-2xl shadow-2xl print:shadow-none print:rounded-none print:p-8 relative">
+        <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto flex justify-center py-10 print:absolute print:inset-0 print:block print:bg-white print:overflow-visible print:py-0">
+          <div className="bg-white w-full max-w-5xl min-h-screen p-12 rounded-2xl shadow-2xl print:shadow-none print:rounded-none print:p-0 relative print:block print:w-full">
             
-            {/* KOTAK KONTROL (HILANG PAS DIPRINT) */}
             <div className="mb-8 p-6 bg-pink-50 rounded-2xl border border-pink-100 print:hidden">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-pink-800">⚙️ Pengaturan Laporan (Filter)</h3>
@@ -158,7 +162,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* HEADER KOP SURAT */}
             <div className="border-b-4 border-gray-900 pb-4 mb-8">
               <h1 className="text-4xl font-black uppercase tracking-widest text-gray-900">Getmoi Thrifting</h1>
               <h2 className="text-xl font-bold text-pink-600 mt-1">Mutasi Transaksi & Laba Rugi</h2>
@@ -167,10 +170,8 @@ export default function Home() {
               </p>
             </div>
 
-            {/* ISI LAPORAN MUTASI */}
             <div className="space-y-8 text-gray-800 text-sm">
               
-              {/* 1. RINCIAN PENJUALAN */}
               <div>
                 <div className="bg-gray-900 text-white p-2 px-4 rounded-t-lg flex justify-between items-center">
                   <h3 className="font-bold text-base tracking-wide">1. RINCIAN PENDAPATAN & HPP</h3>
@@ -178,28 +179,36 @@ export default function Home() {
                 <table className="w-full border-collapse border border-gray-200">
                   <thead className="bg-gray-100 font-bold text-gray-600 uppercase text-[10px]">
                     <tr>
-                      <th className="border border-gray-200 p-2 text-left w-1/4">Tanggal</th>
-                      <th className="border border-gray-200 p-2 text-left w-2/4">Item Terjual</th>
+                      <th className="border border-gray-200 p-2 text-left">Tanggal</th>
+                      <th className="border border-gray-200 p-2 text-left w-1/3">Item Terjual</th>
                       <th className="border border-gray-200 p-2 text-right">HPP (Modal)</th>
-                      <th className="border border-gray-200 p-2 text-right">Pendapatan</th>
+                      <th className="border border-gray-200 p-2 text-right">Harga Jual</th>
+                      <th className="border border-gray-200 p-2 text-right text-blue-600">Profit Bersih</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredJual.map(trx => (
-                      <tr key={trx.id} className="border-b border-gray-200">
-                        <td className="p-2 border border-gray-200">{trx.tanggal}</td>
-                        <td className="p-2 border border-gray-200 font-medium">{trx.namaBarang}</td>
-                        <td className="p-2 border border-gray-200 text-right text-red-600 font-medium">(Rp {Number(trx.hargaModal).toLocaleString('id-ID')})</td>
-                        <td className="p-2 border border-gray-200 text-right text-emerald-600 font-bold">Rp {Number(trx.hargaJual).toLocaleString('id-ID')}</td>
-                      </tr>
-                    ))}
-                    {filteredJual.length === 0 && <tr><td colSpan="4" className="p-4 text-center italic text-gray-400">Tidak ada transaksi penjualan di periode ini.</td></tr>}
+                    {filteredJual.map((trx, i) => {
+                      const hpp = Number(trx.hargaModal) || 0;
+                      const jual = Number(trx.hargaJual) || 0;
+                      const profit = jual - hpp;
+                      return (
+                        <tr key={trx.id || i} className="border-b border-gray-200">
+                          <td className="p-2 border border-gray-200">{trx.tanggal}</td>
+                          <td className="p-2 border border-gray-200 font-medium">{trx.namaBarang}</td>
+                          <td className="p-2 border border-gray-200 text-right text-red-600 font-medium">(Rp {hpp.toLocaleString('id-ID')})</td>
+                          <td className="p-2 border border-gray-200 text-right text-emerald-600 font-bold">Rp {jual.toLocaleString('id-ID')}</td>
+                          <td className="p-2 border border-gray-200 text-right text-blue-600 font-bold">Rp {profit.toLocaleString('id-ID')}</td>
+                        </tr>
+                      );
+                    })}
+                    {filteredJual.length === 0 && <tr><td colSpan="5" className="p-4 text-center italic text-gray-400">Tidak ada transaksi penjualan di periode ini.</td></tr>}
                   </tbody>
                   <tfoot className="bg-gray-50 font-black">
                     <tr>
                       <td colSpan="2" className="p-2 border border-gray-200 text-right uppercase">Total Penjualan:</td>
                       <td className="p-2 border border-gray-200 text-right text-red-700">(Rp {pnlHPP.toLocaleString('id-ID')})</td>
                       <td className="p-2 border border-gray-200 text-right text-emerald-700">Rp {pnlPendapatan.toLocaleString('id-ID')}</td>
+                      <td className="p-2 border border-gray-200 text-right text-blue-700">Rp {pnlLabaKotor.toLocaleString('id-ID')}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -211,7 +220,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 2. RINCIAN OPERASIONAL */}
               <div>
                 <div className="bg-red-800 text-white p-2 px-4 rounded-t-lg flex justify-between items-center mt-6">
                   <h3 className="font-bold text-base tracking-wide">2. RINCIAN BEBAN OPERASIONAL</h3>
@@ -243,15 +251,13 @@ export default function Home() {
                 </table>
               </div>
 
-              {/* LABA BERSIH (HIGHLIGHT) */}
-              <div className="flex justify-between items-center bg-emerald-100 p-5 rounded-xl border-2 border-emerald-400 my-6 shadow-sm">
+              <div className="flex justify-between items-center bg-emerald-100 p-5 rounded-xl border-2 border-emerald-400 my-6 shadow-sm break-inside-avoid">
                 <p className="font-black text-2xl text-emerald-900 tracking-wide">LABA BERSIH (NET PROFIT)</p>
                 <p className="font-black text-3xl text-emerald-700">Rp {pnlLabaBersih.toLocaleString('id-ID')}</p>
               </div>
 
-              {/* 3. RINCIAN PRIVE */}
               {filteredPrive.length > 0 && (
-                <div>
+                <div className="break-inside-avoid">
                   <div className="bg-purple-800 text-white p-2 px-4 rounded-t-lg flex justify-between items-center">
                     <h3 className="font-bold text-base tracking-wide">3. MUTASI PENARIKAN (PRIVE / REWARD)</h3>
                   </div>
@@ -284,7 +290,6 @@ export default function Home() {
 
             </div>
 
-            {/* TANDA TANGAN */}
             <div className="mt-16 flex justify-end print:mt-24 break-inside-avoid">
               <div className="text-center">
                 <p className="mb-16 text-gray-600">Disetujui Oleh,</p>
@@ -293,7 +298,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* FOOTER */}
             <div className="mt-8 text-center text-[10px] text-gray-400 border-t border-gray-200 pt-4 print:mt-12 break-inside-avoid">
               <p>Laporan Mutasi Terintegrasi Getmoi. Dokumen ini sah dan di-generate otomatis oleh sistem.</p>
             </div>
