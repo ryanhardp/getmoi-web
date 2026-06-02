@@ -12,28 +12,57 @@ export default function Kasir() {
   // 🚀 STATE KHUSUS BUAT NAMPILIN NOTA THERMAL
   const [notaAktif, setNotaAktif] = useState(null);
 
-  // 🛠️ HELPER: Obat Penawar Tanggal Aneh dari Google Sheets
+  // 🛠️ HELPER SAKTI: Mengubah semua format tanggal "ngaco" dari Sheets menjadi WIB Resmi
   const formatTanggal = (tglStr) => {
     if (!tglStr) return "";
-    // Kalau yang ditarik malah angka serial Excel (misal 46172.xxx)
+    
+    // 1. Jika berupa angka serial Excel/Google Sheets (misal: 46172.9958)
     if (!isNaN(Number(tglStr)) && Number(tglStr) > 40000) {
       const excelDate = Number(tglStr);
-      // Konversi serial Excel ke Date JavaScript
       const dateObj = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-      return dateObj.toLocaleDateString('sv-SE') + ' ' + dateObj.toLocaleTimeString('sv-SE', {hour: '2-digit', minute:'2-digit'});
+      
+      const tgl = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(dateObj);
+      const jam = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(dateObj);
+      return `${tgl} ${jam}`;
     }
+
+    // 2. Jika berupa string tanggal biasa (misal "2026-05-28 11:19" tapi jamnya meleset)
+    try {
+      if (typeof tglStr === 'string' && (tglStr.includes('-') || tglStr.includes('/'))) {
+        let cleanStr = tglStr.trim();
+        // Paksa tambahkan text ' UTC' di belakang jika belum ada penanda zona waktu,
+        // biar saat di-parse oleh browser, otomatis ke-convert maju +7 jam (WIB Jakarta)
+        if (!cleanStr.includes('Z') && !cleanStr.includes('+') && !cleanStr.includes('GMT') && !cleanStr.includes('UTC')) {
+          cleanStr += ' UTC';
+        }
+        
+        const dateObj = new Date(cleanStr);
+        if (!isNaN(dateObj.getTime())) {
+          const tgl = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(dateObj);
+          const jam = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(dateObj);
+          return `${tgl} ${jam}`;
+        }
+      }
+    } catch (e) {
+      console.error("Gagal menyehatkan format tanggal string:", e);
+    }
+
     return tglStr;
   };
 
+  // 🚀 BACA GUDANG LANGSUNG DARI AWAN
   const loadDataCloud = async () => {
     try {
       const [resGudang, resJual] = await Promise.all([
         fetch('/api/gudang').then(r => r.json()),
         fetch('/api/kasir').then(r => r.json())
       ]);
+      
+      // Cuma tampilin barang yang stoknya > 0 di Kasir
       if(resGudang.success) setDbBarang(resGudang.data.filter(b => b.stok > 0)); 
+      
       if(resJual.success) {
-        // Obatin semua tanggal yang aneh sebelum disimpen ke State
+        // 🚀 PROSES MASSAL: Semua transaksi lama di-filter & diubah jamnya ke WIB disini!
         const dataJualSehat = resJual.data.map(trx => ({
           ...trx,
           tanggal: formatTanggal(trx.tanggal)
@@ -80,8 +109,14 @@ export default function Kasir() {
     const gabunganKode = keranjang.map(i => i.kodeItem).join('+');
     const gabunganNama = keranjang.map(i => `1x ${i.namaBarang}`).join(' + ');
     
+    // Paku mati pembuatan transaksi baru selalu dalam Zona Waktu Asia/Jakarta (WIB)
+    const now = new Date();
+    const tglWIB = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+    const jamWIB = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
+    const waktuTrx = `${tglWIB} ${jamWIB}`;
+    
     const payload = {
-      tanggal: new Date().toLocaleDateString('sv-SE') + ' ' + new Date().toLocaleTimeString('sv-SE', {hour: '2-digit', minute:'2-digit'}), 
+      tanggal: waktuTrx, 
       kodeItem: gabunganKode,
       namaBarang: `${gabunganNama} [${metodeBayar}]`, 
       hargaModal: totalModal,
@@ -107,7 +142,6 @@ export default function Kasir() {
         
         await loadDataCloud(); 
 
-        // 🚀 Hitung ID Ref Transaksi Baru
         const urutanBaru = riwayatPenjualan.length + 1;
         setNotaAktif({ ...payload, refId: urutanBaru });
       } else {
@@ -131,23 +165,21 @@ export default function Kasir() {
     window.print();
   };
 
-  // Logika buat ngeracik daftar item belanjaan ke bawah di nota
+  // Menjabarkan item satu-satu ke bawah di Nota ala Minimarket asli
   const renderItemNota = (nota) => {
     if (!nota) return null;
     let items = [];
 
     if (nota.keranjang && Array.isArray(nota.keranjang)) {
-      // Data dari transaksi yang baru dibikin detik ini
-      items = nota.keranjang.map(k => `${k.namaBarang} (Modal: Rp ${(k.hargaModal || 0).toLocaleString('id-ID')})`);
+      items = nota.keranjang.map(k => `${k.namaBarang} (HPP: Rp ${(k.hargaModal || 0).toLocaleString('id-ID')})`);
     } else {
-      // Data dari riwayat tabel (kita pecah teks-nya)
       let rawText = nota.namaBarang || "";
-      rawText = rawText.replace(/\[.*?\]/g, ""); // Umpetin teks "[Transfer BCA]" dari rincian item
+      rawText = rawText.replace(/\[.*?\]/g, ""); 
       items = rawText.split('+').map(i => i.trim()).filter(i => i !== "");
     }
 
     return items.map((item, idx) => (
-      <p key={idx} className="pl-2 mb-1 text-[10px]">- {item}</p>
+      <p key={idx} className="pl-2 mb-1 text-[10px] text-left">• {item}</p>
     ));
   };
 
@@ -157,7 +189,7 @@ export default function Kasir() {
 
   return (
     <>
-      {/* 🚀 MODAL NOTA THERMAL (UKURAN 58mm) 🚀 */}
+      {/* 🚀 MODAL NOTA THERMAL (GETMOI CLOTHES STORE) 🚀 */}
       {notaAktif && (
         <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto flex justify-center py-10 print:absolute print:inset-0 print:block print:bg-white print:py-0 print:overflow-visible">
           
@@ -168,15 +200,15 @@ export default function Kasir() {
               <button onClick={handlePrintNota} className="px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-lg text-sm shadow-md transition">🖨️ Cetak / Save PDF</button>
             </div>
 
-            {/* AREA KERTAS THERMAL */}
+            {/* AREA KERTAS THERMAL 58mm */}
             <div className="bg-white text-black p-4 w-[280px] shadow-2xl print:shadow-none print:w-[58mm] print:p-2 font-mono text-[11px] leading-tight break-inside-avoid">
               
               <div className="text-center mb-4">
-                <h2 className="font-black text-lg">GETMOI CLOTHES STORE</h2>
+                <h2 className="font-black text-sm tracking-tight">GETMOI CLOTHES STORE</h2>
                 <p className="border-b-2 border-dashed border-black pb-2 mt-1">Nota Dapur Admin</p>
               </div>
 
-              <div className="mb-2">
+              <div className="mb-2 space-y-0.5">
                 <p>Tgl : {notaAktif.tanggal}</p>
                 <p>Ref : TRX-{String(notaAktif.refId).padStart(4, '0')}</p>
               </div>
@@ -184,7 +216,7 @@ export default function Kasir() {
               <div className="border-t border-dashed border-black pt-2 mb-2">
                 <p className="font-bold mb-1">Rincian Item:</p>
                 {renderItemNota(notaAktif)}
-                <p className="pl-2 mt-2 text-[9px] font-bold">[Kode Gabungan: {notaAktif.kodeItem}]</p>
+                <p className="pl-2 mt-2 text-[9px] font-bold text-gray-600">[Kode: {notaAktif.kodeItem}]</p>
               </div>
 
               <div className="border-t border-b border-dashed border-black py-2 mb-2 space-y-1">
@@ -203,7 +235,7 @@ export default function Kasir() {
                 <span>Rp {Number(notaAktif.profit).toLocaleString('id-ID')}</span>
               </div>
 
-              <div className="text-center mt-6 pt-4 border-t-2 border-dashed border-black text-[9px]">
+              <div className="text-center mt-6 pt-4 border-t-2 border-dashed border-black text-[9px] text-gray-600">
                 <p>Dokumen Internal Getmoi</p>
                 <p>Rahasia - Jangan Diberikan ke Pembeli</p>
               </div>
@@ -217,6 +249,7 @@ export default function Kasir() {
       <main className="print:hidden p-8 font-sans text-gray-800 max-w-7xl mx-auto">
         <div className="space-y-6">
           
+          {/* Header Bar */}
           <div className="flex justify-between items-center bg-white p-4 px-6 rounded-2xl shadow-sm border border-pink-100">
             <div className="flex items-center gap-4">
               <Link href="/" className="p-2 bg-pink-50 rounded-xl shadow-sm hover:bg-pink-100 text-pink-600 transition font-medium text-sm">&larr; Kembali</Link>
@@ -228,6 +261,7 @@ export default function Kasir() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Keranjang */}
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100">
                 <h2 className="text-lg font-bold text-gray-800 mb-4 border-b border-pink-50 pb-2">📦 Keranjang Pesanan</h2>
@@ -260,6 +294,7 @@ export default function Kasir() {
               </div>
             </div>
 
+            {/* Checkout */}
             <div className="space-y-6">
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100">
                 <h2 className="text-lg font-bold text-gray-800 mb-4 border-b border-pink-50 pb-2">💳 Rincian Pembayaran</h2>
@@ -302,6 +337,7 @@ export default function Kasir() {
             </div>
           </div>
 
+          {/* TABEL RIWAYAT PENJUALAN KASIR */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100 mt-6">
             <div className="flex justify-between items-center mb-4 border-b border-pink-50 pb-2">
               <h2 className="text-lg font-bold text-gray-800">🧾 Riwayat Penjualan Terakhir</h2>
@@ -334,7 +370,6 @@ export default function Kasir() {
                       <td className="p-4 font-bold text-emerald-500 whitespace-nowrap">+ Rp {(trx.profit || 0).toLocaleString('id-ID')}</td>
                       <td className="p-4 text-center">
                         <button 
-                          // 🚀 Tarik nomor urut dengan menghitung panjang array dikurang posisi index
                           onClick={() => setNotaAktif({ ...trx, refId: riwayatPenjualan.length - idx })} 
                           className="bg-gray-800 hover:bg-gray-900 text-white text-xs px-3 py-1.5 rounded-lg shadow-sm font-bold transition">
                           🖨️ Nota
