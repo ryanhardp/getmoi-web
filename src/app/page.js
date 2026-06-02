@@ -137,7 +137,6 @@ export default function Home() {
 
   return (
     <>
-      {/* 🚀 MODAL LAPORAN P&L RINCI 🚀 */}
       {showPnL && (
         <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto flex justify-center py-10 print:absolute print:inset-0 print:block print:bg-white print:overflow-visible print:py-0">
           <div className="bg-white w-full max-w-5xl min-h-screen p-12 rounded-2xl shadow-2xl print:shadow-none print:rounded-none print:p-0 relative print:block print:w-full">
@@ -186,6 +185,7 @@ export default function Home() {
                       <th className="border border-gray-200 p-2 text-right text-blue-600">Profit Bersih</th>
                     </tr>
                   </thead>
+                  {/* Totalan dipindah ke dalam tbody biar cuma muncul 1 kali di paling bawah data */}
                   <tbody>
                     {filteredJual.map((trx, i) => {
                       const hpp = Number(trx.hargaModal) || 0;
@@ -202,15 +202,17 @@ export default function Home() {
                       );
                     })}
                     {filteredJual.length === 0 && <tr><td colSpan="5" className="p-4 text-center italic text-gray-400">Tidak ada transaksi penjualan di periode ini.</td></tr>}
+                    
+                    {/* Baris Grand Total */}
+                    {filteredJual.length > 0 && (
+                      <tr className="bg-gray-50 font-black border-t-2 border-gray-400">
+                        <td colSpan="2" className="p-3 border border-gray-200 text-right uppercase">GRAND TOTAL PENJUALAN:</td>
+                        <td className="p-3 border border-gray-200 text-right text-red-700">(Rp {pnlHPP.toLocaleString('id-ID')})</td>
+                        <td className="p-3 border border-gray-200 text-right text-emerald-700">Rp {pnlPendapatan.toLocaleString('id-ID')}</td>
+                        <td className="p-3 border border-gray-200 text-right text-blue-700">Rp {pnlLabaKotor.toLocaleString('id-ID')}</td>
+                      </tr>
+                    )}
                   </tbody>
-                  <tfoot className="bg-gray-50 font-black">
-                    <tr>
-                      <td colSpan="2" className="p-2 border border-gray-200 text-right uppercase">Total Penjualan:</td>
-                      <td className="p-2 border border-gray-200 text-right text-red-700">(Rp {pnlHPP.toLocaleString('id-ID')})</td>
-                      <td className="p-2 border border-gray-200 text-right text-emerald-700">Rp {pnlPendapatan.toLocaleString('id-ID')}</td>
-                      <td className="p-2 border border-gray-200 text-right text-blue-700">Rp {pnlLabaKotor.toLocaleString('id-ID')}</td>
-                    </tr>
-                  </tfoot>
                 </table>
                 <div className="flex justify-end mt-2">
                   <div className="bg-blue-50 border border-blue-200 p-2 px-4 rounded-lg inline-block">
@@ -241,13 +243,15 @@ export default function Home() {
                       </tr>
                     ))}
                     {filteredOpr.length === 0 && <tr><td colSpan="3" className="p-4 text-center italic text-gray-400">Tidak ada beban operasional di periode ini.</td></tr>}
+                    
+                    {/* Baris Grand Total */}
+                    {filteredOpr.length > 0 && (
+                      <tr className="bg-gray-50 font-black border-t-2 border-gray-400">
+                        <td colSpan="2" className="p-3 border border-gray-200 text-right uppercase">GRAND TOTAL BEBAN OPERASIONAL:</td>
+                        <td className="p-3 border border-gray-200 text-right text-red-700">(Rp {pnlTotalOpr.toLocaleString('id-ID')})</td>
+                      </tr>
+                    )}
                   </tbody>
-                  <tfoot className="bg-gray-50 font-black">
-                    <tr>
-                      <td colSpan="2" className="p-2 border border-gray-200 text-right uppercase">Total Beban Operasional:</td>
-                      <td className="p-2 border border-gray-200 text-right text-red-700">(Rp {pnlTotalOpr.toLocaleString('id-ID')})</td>
-                    </tr>
-                  </tfoot>
                 </table>
               </div>
 
@@ -277,18 +281,17 @@ export default function Home() {
                           <td className="p-2 border border-gray-200 text-right text-purple-600 font-medium">(Rp {Number(item.nominal).toLocaleString('id-ID')})</td>
                         </tr>
                       ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50 font-black">
-                      <tr>
-                        <td colSpan="2" className="p-2 border border-gray-200 text-right uppercase">Total Penarikan (Prive):</td>
-                        <td className="p-2 border border-gray-200 text-right text-purple-700">(Rp {pnlTotalPrive.toLocaleString('id-ID')})</td>
+                      
+                      {/* Baris Grand Total */}
+                      <tr className="bg-gray-50 font-black border-t-2 border-gray-400">
+                        <td colSpan="2" className="p-3 border border-gray-200 text-right uppercase">GRAND TOTAL PENARIKAN (PRIVE):</td>
+                        <td className="p-3 border border-gray-200 text-right text-purple-700">(Rp {pnlTotalPrive.toLocaleString('id-ID')})</td>
                       </tr>
-                    </tfoot>
+                    </tbody>
                   </table>
                 </div>
               )}
 
-              {/* 🚀 BAGIAN BARU: SISA KAS DAN ASET 🚀 */}
               <div className="mt-8 break-inside-avoid">
                 <div className="bg-blue-900 text-white p-2 px-4 rounded-t-lg flex justify-between items-center">
                   <h3 className="font-bold text-base tracking-wide">4. POSISI KAS & ASET TERAKHIR (REAL-TIME)</h3>
@@ -303,13 +306,11 @@ export default function Home() {
                       <td className="p-3 border border-gray-200 font-medium">Nilai Aset di Stok Baju (Uang Tertahan)</td>
                       <td className="p-3 border border-gray-200 text-right font-bold text-blue-600">Rp {uangTertahan.toLocaleString('id-ID')}</td>
                     </tr>
-                  </tbody>
-                  <tfoot className="bg-blue-50 font-black text-lg">
-                    <tr>
+                    <tr className="bg-blue-50 font-black border-t-2 border-gray-400 text-lg">
                       <td className="p-4 border border-gray-200 text-right uppercase text-blue-900">SISA KAS FISIK (TUNAI/REKENING) SAAT INI:</td>
                       <td className="p-4 border border-gray-200 text-right text-blue-700">Rp {sisaKas.toLocaleString('id-ID')}</td>
                     </tr>
-                  </tfoot>
+                  </tbody>
                 </table>
               </div>
 
