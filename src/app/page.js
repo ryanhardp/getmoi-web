@@ -5,13 +5,14 @@ import { useState, useEffect } from 'react';
 export default function Home() {
   const MODAL_AWAL = 700000; 
   const [uangTertahan, setUangTertahan] = useState(0);
+  const [totalStokBaju, setTotalStokBaju] = useState(0); // State Baru buat Stok
   const [operasional, setOperasional] = useState(0);
+  const [prive, setPrive] = useState(0); // State Baru buat Bagi Hasil/Reward
   const [labaKotor, setLabaKotor] = useState(0); 
   const [riwayatTransaksi, setRiwayatTransaksi] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    // 🚀 OTOMATIS SEDOT SEMUA DATA DARI GOOGLE SHEETS PAS DIBUKA
     const tarikSemuaData = async () => {
       try {
         const [resGudang, resOpr, resJual] = await Promise.all([
@@ -20,14 +21,39 @@ export default function Home() {
           fetch('/api/kasir').then(r => r.json())
         ]);
 
+        // 1. Hitung Uang Tertahan & Sisa Stok Baju
         let aset = 0;
-        if(resGudang.success) resGudang.data.forEach(item => { aset += (item.hargaModal || 0) * (item.stok || 0); });
+        let stokBaju = 0;
+        if(resGudang.success) {
+          resGudang.data.forEach(item => { 
+            const isPack = String(item.kodeItem).startsWith('P') || item.kategori === 'Packaging';
+            aset += (item.hargaModal || 0) * (item.stok || 0); 
+            
+            // Cuma hitung baju, plastik ga ikutan
+            if (!isPack) stokBaju += (item.stok || 0);
+          });
+        }
         setUangTertahan(aset);
+        setTotalStokBaju(stokBaju);
 
+        // 2. Filter Cerdas: Operasional vs Prive (Bagi Hasil)
         let opr = 0;
-        if(resOpr.success) resOpr.data.forEach(item => { opr += (item.nominal || 0); });
+        let tarikUntung = 0;
+        if(resOpr.success) {
+          resOpr.data.forEach(item => { 
+            const ket = (item.keterangan || '').toLowerCase();
+            // Kalau ada kata sakti ini, masukin ke Prive
+            if (ket.includes('prive') || ket.includes('bagi hasil') || ket.includes('reward')) {
+              tarikUntung += (item.nominal || 0);
+            } else {
+              opr += (item.nominal || 0); 
+            }
+          });
+        }
         setOperasional(opr);
+        setPrive(tarikUntung);
 
+        // 3. Hitung Laba Kotor (Profit Transaksi)
         let profit = 0;
         if(resJual.success) {
           resJual.data.forEach(trx => { profit += (Number(trx.profit) || 0); });
@@ -45,11 +71,14 @@ export default function Home() {
     tarikSemuaData();
   }, []);
 
+  // Laba Bersih cuma dipotong Operasional bisnis (Prive ga ngurangin performa bisnis)
   const labaBersih = labaKotor - operasional;
-  const sisaKas = MODAL_AWAL - uangTertahan + labaBersih;
+  
+  // Sisa Kas Fisik dipotong Laba Bersih DAN Prive (Duit yang lu bawa pulang)
+  const sisaKas = MODAL_AWAL - uangTertahan + labaBersih - prive;
 
   return (
-    <main className="p-8 font-sans text-gray-800 max-w-6xl mx-auto">
+    <main className="p-8 font-sans text-gray-800 max-w-7xl mx-auto">
       <div className="mb-8 mt-4 border-b border-pink-200 pb-6 flex justify-between items-end">
         <div>
           <h1 className="text-4xl font-extrabold text-gray-900 mb-2">Dashboard Getmoi 🌸</h1>
@@ -59,36 +88,55 @@ export default function Home() {
       </div>
 
       {isLoaded && (
-        <div className="mb-10 animate-fade-in">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="mb-10 animate-fade-in space-y-4">
+          
+          {/* BARIS 1: KONDISI KAS & ASET */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-center">
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Modal Awal</p>
               <h3 className="text-2xl font-black text-gray-800">Rp {MODAL_AWAL.toLocaleString('id-ID')}</h3>
             </div>
+            
             <div className="bg-gradient-to-br from-pink-500 to-rose-500 p-5 rounded-2xl shadow-lg shadow-pink-500/20 text-white flex flex-col justify-center relative overflow-hidden">
               <div className="absolute top-0 right-0 w-24 h-24 bg-white opacity-10 rounded-full blur-xl transform translate-x-8 -translate-y-8"></div>
               <p className="text-[10px] font-bold text-pink-100 uppercase tracking-widest mb-1">Sisa Kas Fisik di Tangan</p>
               <h3 className="text-2xl font-black text-white">Rp {sisaKas.toLocaleString('id-ID')}</h3>
             </div>
+            
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-blue-100 flex flex-col justify-center">
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Uang Tertahan di Stok</p>
               <h3 className="text-2xl font-black text-blue-600">Rp {uangTertahan.toLocaleString('id-ID')}</h3>
             </div>
+
+            {/* KOTAK BARU: TOTAL STOK BAJU */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-amber-100 flex flex-col justify-center">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Total Stok Baju (Fisik)</p>
+              <h3 className="text-2xl font-black text-amber-500">{totalStokBaju} <span className="text-sm font-bold text-gray-500">pcs</span></h3>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* BARIS 2: PERFORMA BISNIS */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-center">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Laba Kotor (Untung Transaksi)</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Laba Kotor (Untung Jualan)</p>
               <h3 className="text-2xl font-black text-gray-800">Rp {labaKotor.toLocaleString('id-ID')}</h3>
             </div>
+            
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-red-100 flex flex-col justify-center">
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Operasional (Non-Stok)</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Operasional (Beban Bisnis)</p>
               <h3 className="text-2xl font-black text-red-500">- Rp {operasional.toLocaleString('id-ID')}</h3>
             </div>
+            
             <div className="bg-gradient-to-br from-emerald-400 to-teal-500 p-5 rounded-2xl shadow-lg shadow-emerald-500/20 text-white flex flex-col justify-center relative overflow-hidden">
               <div className="absolute top-0 right-0 w-24 h-24 bg-white opacity-10 rounded-full blur-xl transform translate-x-8 -translate-y-8"></div>
               <p className="text-[10px] font-bold text-emerald-100 uppercase tracking-widest mb-1">Laba Bersih (Net Profit)</p>
               <h3 className="text-2xl font-black text-white">+ Rp {labaBersih.toLocaleString('id-ID')}</h3>
+            </div>
+
+            {/* KOTAK BARU: PRIVE / BAGI HASIL */}
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-purple-100 flex flex-col justify-center">
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Tarik Untung (Prive/Reward)</p>
+              <h3 className="text-2xl font-black text-purple-600">- Rp {prive.toLocaleString('id-ID')}</h3>
             </div>
           </div>
         </div>
