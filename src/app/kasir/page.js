@@ -104,7 +104,8 @@ export default function Kasir() {
     setLoadingTarik(false);
   };
 
-  const barangBelumDipilih = dbBarang; 
+  // 🚀 FIX: Sembunyiin barang yang udah masuk keranjang dari dropdown pilihan!
+  const barangBelumDipilih = dbBarang.filter(b => !keranjang.some(k => k.kodeItem === b.kodeItem)); 
 
   if (!isLoaded) return null;
 
