@@ -12,16 +12,34 @@ export default function Kasir() {
   // 🚀 STATE KHUSUS BUAT NAMPILIN NOTA THERMAL
   const [notaAktif, setNotaAktif] = useState(null);
 
-  // 🚀 BACA GUDANG LANGSUNG DARI AWAN
+  // 🛠️ HELPER: Obat Penawar Tanggal Aneh dari Google Sheets
+  const formatTanggal = (tglStr) => {
+    if (!tglStr) return "";
+    // Kalau yang ditarik malah angka serial Excel (misal 46172.xxx)
+    if (!isNaN(Number(tglStr)) && Number(tglStr) > 40000) {
+      const excelDate = Number(tglStr);
+      // Konversi serial Excel ke Date JavaScript
+      const dateObj = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+      return dateObj.toLocaleDateString('sv-SE') + ' ' + dateObj.toLocaleTimeString('sv-SE', {hour: '2-digit', minute:'2-digit'});
+    }
+    return tglStr;
+  };
+
   const loadDataCloud = async () => {
     try {
       const [resGudang, resJual] = await Promise.all([
         fetch('/api/gudang').then(r => r.json()),
         fetch('/api/kasir').then(r => r.json())
       ]);
-      // Cuma tampilin barang yang stoknya > 0 di Kasir
       if(resGudang.success) setDbBarang(resGudang.data.filter(b => b.stok > 0)); 
-      if(resJual.success) setRiwayatPenjualan(resJual.data);
+      if(resJual.success) {
+        // Obatin semua tanggal yang aneh sebelum disimpen ke State
+        const dataJualSehat = resJual.data.map(trx => ({
+          ...trx,
+          tanggal: formatTanggal(trx.tanggal)
+        }));
+        setRiwayatPenjualan(dataJualSehat);
+      }
     } catch (error) {
       console.error("Gagal narik data:", error);
     } finally {
@@ -62,7 +80,6 @@ export default function Kasir() {
     const gabunganKode = keranjang.map(i => i.kodeItem).join('+');
     const gabunganNama = keranjang.map(i => `1x ${i.namaBarang}`).join(' + ');
     
-    // Siapin data buat dikirim ke API
     const payload = {
       tanggal: new Date().toLocaleDateString('sv-SE') + ' ' + new Date().toLocaleTimeString('sv-SE', {hour: '2-digit', minute:'2-digit'}), 
       kodeItem: gabunganKode,
@@ -72,7 +89,7 @@ export default function Kasir() {
       qty: keranjang.length, 
       profit: potensiProfit,
       profitPersen: totalModal > 0 ? `${((potensiProfit/totalModal)*100).toFixed(1)}%` : "0%",
-      keranjang: keranjang // 🚀 Wajib dikirim biar backend bisa motong stok barang ini!
+      keranjang: keranjang 
     };
 
     try {
@@ -88,11 +105,11 @@ export default function Kasir() {
         alert(`✅ Transaksi Berhasil!\nStok otomatis terpotong di Gudang!\nProfit: Rp ${potensiProfit.toLocaleString('id-ID')}`);
         setKeranjang([]); setHargaJual(""); setMetodeBayar("Transfer BCA");
         
-        // Refresh tabel kasir dan data barang
         await loadDataCloud(); 
 
-        // 🚀 OTOMATIS MUNCULIN NOTA ADMIN SETELAH TRANSAKSI BERHASIL 🚀
-        setNotaAktif(payload);
+        // 🚀 Hitung ID Ref Transaksi Baru
+        const urutanBaru = riwayatPenjualan.length + 1;
+        setNotaAktif({ ...payload, refId: urutanBaru });
       } else {
         alert("❌ Gagal simpan ke Sheets: " + respon.error);
       }
@@ -114,7 +131,26 @@ export default function Kasir() {
     window.print();
   };
 
-  // 🚀 FIX: Sembunyiin barang yang udah masuk keranjang dari dropdown pilihan!
+  // Logika buat ngeracik daftar item belanjaan ke bawah di nota
+  const renderItemNota = (nota) => {
+    if (!nota) return null;
+    let items = [];
+
+    if (nota.keranjang && Array.isArray(nota.keranjang)) {
+      // Data dari transaksi yang baru dibikin detik ini
+      items = nota.keranjang.map(k => `${k.namaBarang} (Modal: Rp ${(k.hargaModal || 0).toLocaleString('id-ID')})`);
+    } else {
+      // Data dari riwayat tabel (kita pecah teks-nya)
+      let rawText = nota.namaBarang || "";
+      rawText = rawText.replace(/\[.*?\]/g, ""); // Umpetin teks "[Transfer BCA]" dari rincian item
+      items = rawText.split('+').map(i => i.trim()).filter(i => i !== "");
+    }
+
+    return items.map((item, idx) => (
+      <p key={idx} className="pl-2 mb-1 text-[10px]">- {item}</p>
+    ));
+  };
+
   const barangBelumDipilih = dbBarang.filter(b => !keranjang.some(k => k.kodeItem === b.kodeItem)); 
 
   if (!isLoaded) return null;
@@ -126,7 +162,7 @@ export default function Kasir() {
         <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto flex justify-center py-10 print:absolute print:inset-0 print:block print:bg-white print:py-0 print:overflow-visible">
           
           <div className="relative w-full max-w-sm flex flex-col items-center">
-            {/* Tombol Kontrol (Hilang saat diprint) */}
+            {/* Tombol Kontrol */}
             <div className="w-full flex justify-between bg-white p-4 rounded-xl mb-4 shadow-lg print:hidden">
               <button onClick={() => setNotaAktif(null)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg text-sm transition">Tutup</button>
               <button onClick={handlePrintNota} className="px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-lg text-sm shadow-md transition">🖨️ Cetak / Save PDF</button>
@@ -136,34 +172,34 @@ export default function Kasir() {
             <div className="bg-white text-black p-4 w-[280px] shadow-2xl print:shadow-none print:w-[58mm] print:p-2 font-mono text-[11px] leading-tight break-inside-avoid">
               
               <div className="text-center mb-4">
-                <h2 className="font-black text-lg">GETMOI THRIFTING</h2>
+                <h2 className="font-black text-lg">GETMOI CLOTHES STORE</h2>
                 <p className="border-b-2 border-dashed border-black pb-2 mt-1">Nota Dapur Admin</p>
               </div>
 
               <div className="mb-2">
                 <p>Tgl : {notaAktif.tanggal}</p>
-                <p>Ref : TRX-{Math.floor(Math.random() * 10000)}</p>
+                <p>Ref : TRX-{String(notaAktif.refId).padStart(4, '0')}</p>
               </div>
               
               <div className="border-t border-dashed border-black pt-2 mb-2">
-                <p className="font-bold mb-1">Item Terjual:</p>
-                <p className="pl-2">- {notaAktif.namaBarang}</p>
-                <p className="pl-2 mt-1 text-[9px]">[Kode: {notaAktif.kodeItem}]</p>
+                <p className="font-bold mb-1">Rincian Item:</p>
+                {renderItemNota(notaAktif)}
+                <p className="pl-2 mt-2 text-[9px] font-bold">[Kode Gabungan: {notaAktif.kodeItem}]</p>
               </div>
 
               <div className="border-t border-b border-dashed border-black py-2 mb-2 space-y-1">
                 <div className="flex justify-between">
-                  <span>HPP (Modal)</span>
+                  <span>TOTAL HPP (Modal)</span>
                   <span>Rp {Number(notaAktif.hargaModal).toLocaleString('id-ID')}</span>
                 </div>
-                <div className="flex justify-between font-bold">
-                  <span>HARGA JUAL</span>
+                <div className="flex justify-between font-bold text-sm pt-1">
+                  <span>TOTAL JUAL</span>
                   <span>Rp {Number(notaAktif.hargaJual).toLocaleString('id-ID')}</span>
                 </div>
               </div>
 
               <div className="flex justify-between font-black text-sm pt-1">
-                <span>PROFIT</span>
+                <span>PROFIT BERSIH</span>
                 <span>Rp {Number(notaAktif.profit).toLocaleString('id-ID')}</span>
               </div>
 
@@ -177,11 +213,10 @@ export default function Kasir() {
         </div>
       )}
 
-      {/* 🖥️ HALAMAN KASIR NORMAL (HILANG SAAT PRINT) 🖥️ */}
+      {/* 🖥️ HALAMAN KASIR NORMAL 🖥️ */}
       <main className="print:hidden p-8 font-sans text-gray-800 max-w-7xl mx-auto">
         <div className="space-y-6">
           
-          {/* Header Bar */}
           <div className="flex justify-between items-center bg-white p-4 px-6 rounded-2xl shadow-sm border border-pink-100">
             <div className="flex items-center gap-4">
               <Link href="/" className="p-2 bg-pink-50 rounded-xl shadow-sm hover:bg-pink-100 text-pink-600 transition font-medium text-sm">&larr; Kembali</Link>
@@ -193,7 +228,6 @@ export default function Kasir() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Kolom Kiri: Keranjang */}
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100">
                 <h2 className="text-lg font-bold text-gray-800 mb-4 border-b border-pink-50 pb-2">📦 Keranjang Pesanan</h2>
@@ -226,7 +260,6 @@ export default function Kasir() {
               </div>
             </div>
 
-            {/* Kolom Kanan: Checkout */}
             <div className="space-y-6">
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100">
                 <h2 className="text-lg font-bold text-gray-800 mb-4 border-b border-pink-50 pb-2">💳 Rincian Pembayaran</h2>
@@ -269,7 +302,6 @@ export default function Kasir() {
             </div>
           </div>
 
-          {/* TABEL RIWAYAT PENJUALAN KASIR */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100 mt-6">
             <div className="flex justify-between items-center mb-4 border-b border-pink-50 pb-2">
               <h2 className="text-lg font-bold text-gray-800">🧾 Riwayat Penjualan Terakhir</h2>
@@ -285,6 +317,7 @@ export default function Kasir() {
                     <th className="p-4 rounded-tl-xl font-bold">Tanggal</th>
                     <th className="p-4 font-bold">Kode Item</th>
                     <th className="p-4 font-bold">Barang Terjual</th>
+                    <th className="p-4 font-bold">Total HPP</th>
                     <th className="p-4 font-bold">Total Jual</th>
                     <th className="p-4 font-bold">Profit</th>
                     <th className="p-4 rounded-tr-xl font-bold text-center">Cetak</th>
@@ -296,11 +329,13 @@ export default function Kasir() {
                       <td className="p-4 text-xs font-medium text-gray-500 whitespace-nowrap">{trx.tanggal}</td>
                       <td className="p-4 font-bold text-pink-600 text-xs whitespace-nowrap">{trx.kodeItem}</td>
                       <td className="p-4 font-bold text-gray-800">{trx.namaBarang}</td>
+                      <td className="p-4 font-bold text-red-500 whitespace-nowrap">Rp {(trx.hargaModal || 0).toLocaleString('id-ID')}</td>
                       <td className="p-4 font-bold text-blue-600 whitespace-nowrap">Rp {(trx.hargaJual || 0).toLocaleString('id-ID')}</td>
                       <td className="p-4 font-bold text-emerald-500 whitespace-nowrap">+ Rp {(trx.profit || 0).toLocaleString('id-ID')}</td>
                       <td className="p-4 text-center">
                         <button 
-                          onClick={() => setNotaAktif(trx)} 
+                          // 🚀 Tarik nomor urut dengan menghitung panjang array dikurang posisi index
+                          onClick={() => setNotaAktif({ ...trx, refId: riwayatPenjualan.length - idx })} 
                           className="bg-gray-800 hover:bg-gray-900 text-white text-xs px-3 py-1.5 rounded-lg shadow-sm font-bold transition">
                           🖨️ Nota
                         </button>
@@ -309,7 +344,7 @@ export default function Kasir() {
                   ))}
                   {riwayatPenjualan.length === 0 && (
                     <tr>
-                      <td colSpan="6" className="p-8 text-center text-gray-400 font-bold italic">Belum ada transaksi terekam.</td>
+                      <td colSpan="7" className="p-8 text-center text-gray-400 font-bold italic">Belum ada transaksi terekam.</td>
                     </tr>
                   )}
                 </tbody>
