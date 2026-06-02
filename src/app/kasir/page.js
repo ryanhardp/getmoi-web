@@ -11,22 +11,30 @@ export default function Kasir() {
 
   const [notaAktif, setNotaAktif] = useState(null);
 
-  // 🛠️ HELPER SAKTI VERSI WARAS: Nggak ada lagi drama time-travel +7 jam!
+  // 🛠️ HELPER MATEMATIKA MURNI (Anti-Lompat Jam & Anti-Error)
   const formatTanggal = (tglAsli) => {
     if (!tglAsli) return "";
     const tglStr = String(tglAsli).trim();
 
-    // 1. CUMA nyembuhin kalau formatnya angka serial kuno Excel (misal: 46172.9958)
-    if (!isNaN(Number(tglStr)) && Number(tglStr) > 40000 && Number(tglStr) < 60000) {
-      const excelDate = Number(tglStr);
-      const dateObj = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-      
-      const tgl = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(dateObj);
-      const jam = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(dateObj);
-      return `${tgl} ${jam}`;
+    // Deteksi pasti angka serial Excel/Google Sheets
+    if (/^\d+(\.\d+)?$/.test(tglStr)) {
+      const excelDate = parseFloat(tglStr);
+      if (excelDate > 40000 && excelDate < 60000) {
+        // Konversi matematika murni (tanpa diganggu zona waktu browser)
+        const utcDays = excelDate - 25569;
+        const dateObj = new Date(Math.round(utcDays * 86400 * 1000));
+        
+        const pad = (n) => n.toString().padStart(2, '0');
+        const yyyy = dateObj.getUTCFullYear();
+        const mm = pad(dateObj.getUTCMonth() + 1);
+        const dd = pad(dateObj.getUTCDate());
+        const hh = pad(dateObj.getUTCHours());
+        const min = pad(dateObj.getUTCMinutes());
+        
+        return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+      }
     }
-
-    // 2. Kalau Google Sheets udah ngasih string teks "2026-06-02 21:43", BIARIN AJA! Itu udah akurat.
+    // Kalau emang udah teks tanggal normal, biarin aja
     return tglStr;
   };
 
@@ -87,6 +95,7 @@ export default function Kasir() {
     const gabunganKode = keranjang.map(i => i.kodeItem).join('+');
     const gabunganNama = keranjang.map(i => `1x ${i.namaBarang}`).join(' + ');
     
+    // Bikin tanggal transaksi baru murni WIB
     const now = new Date();
     const tglWIB = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
     const jamWIB = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
@@ -167,7 +176,6 @@ export default function Kasir() {
     <>
       {notaAktif && (
         <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto flex justify-center py-10 print:absolute print:inset-0 print:block print:bg-white print:py-0 print:overflow-visible">
-          
           <div className="relative w-full max-w-sm flex flex-col items-center">
             <div className="w-full flex justify-between bg-white p-4 rounded-xl mb-4 shadow-lg print:hidden">
               <button onClick={() => setNotaAktif(null)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-lg text-sm transition">Tutup</button>
@@ -218,7 +226,6 @@ export default function Kasir() {
 
       <main className="print:hidden p-8 font-sans text-gray-800 max-w-7xl mx-auto">
         <div className="space-y-6">
-          
           <div className="flex justify-between items-center bg-white p-4 px-6 rounded-2xl shadow-sm border border-pink-100">
             <div className="flex items-center gap-4">
               <Link href="/" className="p-2 bg-pink-50 rounded-xl shadow-sm hover:bg-pink-100 text-pink-600 transition font-medium text-sm">&larr; Kembali</Link>
@@ -233,7 +240,6 @@ export default function Kasir() {
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100">
                 <h2 className="text-lg font-bold text-gray-800 mb-4 border-b border-pink-50 pb-2">📦 Keranjang Pesanan</h2>
-                
                 <div className="flex gap-3 mb-6">
                   <select value={barangPilihan} onChange={(e) => setBarangPilihan(e.target.value)} className="flex-1 bg-gray-50 border border-gray-200 p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-400 font-medium text-sm">
                     <option value="">+ Tambah Baju / Packaging...</option>
@@ -270,7 +276,6 @@ export default function Kasir() {
                   <span className="text-sm font-black text-gray-800">Rp {totalModal.toLocaleString('id-ID')}</span>
                 </div>
                 <div className="space-y-5">
-                  
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-gray-600">Metode Bayar</label>
                     <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} className="w-full bg-gray-50 border border-gray-200 text-gray-900 font-bold p-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-400 text-sm">
@@ -280,7 +285,6 @@ export default function Kasir() {
                       <option value="Cash / Lainnya">Cash / Lainnya</option>
                     </select>
                   </div>
-
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-gray-600">Harga Jual Akhir</label>
                     <div className="relative">
@@ -288,14 +292,12 @@ export default function Kasir() {
                       <input type="number" value={hargaJual} onChange={(e) => setHargaJual(e.target.value)} placeholder="150000" className="w-full bg-gray-50 border border-gray-200 text-gray-900 font-bold p-3 pl-12 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-400" />
                     </div>
                   </div>
-
                   <div className={`p-4 rounded-2xl border ${potensiProfit >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                     <p className={`text-xs font-bold uppercase mb-1 ${potensiProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>Estimasi Profit Bersih</p>
                     <h3 className={`text-2xl font-black ${potensiProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                       {potensiProfit >= 0 ? '+' : ''} Rp {potensiProfit.toLocaleString('id-ID')}
                     </h3>
                   </div>
-
                   <button onClick={handleSimpanTransaksi} disabled={isSaving} className="w-full mt-4 py-4 bg-pink-500 hover:bg-pink-600 text-white font-bold text-lg rounded-2xl shadow-lg shadow-pink-500/30 transition-all disabled:opacity-50">
                     {isSaving ? '⏳ Menyimpan & Motong Stok...' : 'Selesaikan Transaksi & Cetak'}
                   </button>
@@ -311,7 +313,6 @@ export default function Kasir() {
                 Total Tercatat: {riwayatPenjualan.length} Trx
               </span>
             </div>
-            
             <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
               <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 bg-white z-10">
@@ -352,7 +353,6 @@ export default function Kasir() {
               </table>
             </div>
           </div>
-
         </div>
       </main>
     </>
