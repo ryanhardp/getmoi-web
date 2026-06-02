@@ -9,13 +9,18 @@ export default function Home() {
   const [operasional, setOperasional] = useState(0);
   const [prive, setPrive] = useState(0); 
   const [labaKotor, setLabaKotor] = useState(0); 
-  const [totalPendapatan, setTotalPendapatan] = useState(0); // Buat P&L
-  const [totalHPP, setTotalHPP] = useState(0); // Buat P&L
+  
+  // State nyimpen RAW Data buat diutak-atik di Modal P&L
+  const [dataJualFull, setDataJualFull] = useState([]);
+  const [dataOprFull, setDataOprFull] = useState([]);
+  
   const [riwayatTransaksi, setRiwayatTransaksi] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
   
-  // State buat nampilin Modal Laporan P&L
+  // State P&L Modal & Filter Tanggal
   const [showPnL, setShowPnL] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   useEffect(() => {
     const tarikSemuaData = async () => {
@@ -41,6 +46,7 @@ export default function Home() {
         let opr = 0;
         let tarikUntung = 0;
         if(resOpr.success) {
+          setDataOprFull(resOpr.data); // Simpan mentahannya
           resOpr.data.forEach(item => { 
             const ket = (item.keterangan || '').toLowerCase();
             if (ket.includes('prive') || ket.includes('bagi hasil') || ket.includes('reward')) {
@@ -54,19 +60,14 @@ export default function Home() {
         setPrive(tarikUntung);
 
         let profit = 0;
-        let pendapatan = 0;
-        let hpp = 0;
         if(resJual.success) {
+          setDataJualFull(resJual.data); // Simpan mentahannya
           resJual.data.forEach(trx => { 
             profit += (Number(trx.profit) || 0); 
-            pendapatan += (Number(trx.hargaJual) || 0);
-            hpp += (Number(trx.hargaModal) || 0);
           });
           setRiwayatTransaksi(resJual.data.slice(0, 5));
         }
         setLabaKotor(profit);
-        setTotalPendapatan(pendapatan);
-        setTotalHPP(hpp);
 
       } catch (error) {
         console.error("Gagal nyedot data Dashboard", error);
@@ -78,8 +79,52 @@ export default function Home() {
     tarikSemuaData();
   }, []);
 
+  // PERHITUNGAN GLOBAL DASHBOARD
   const labaBersih = labaKotor - operasional;
   const sisaKas = MODAL_AWAL - uangTertahan + labaBersih - prive;
+
+  // 🚀 LOGIKA FILTER TANGGAL BUAT P&L 🚀
+  const isWithinRange = (dateStr) => {
+    if (!startDate && !endDate) return true;
+    const itemDate = new Date(dateStr.split(' ')[0]);
+    itemDate.setHours(0, 0, 0, 0);
+    
+    let isAfterStart = true;
+    let isBeforeEnd = true;
+
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      isAfterStart = itemDate >= start;
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      isBeforeEnd = itemDate <= end;
+    }
+    return isAfterStart && isBeforeEnd;
+  };
+
+  // Nyuci Data Berdasarkan Tanggal Filter
+  const filteredJual = dataJualFull.filter(trx => isWithinRange(trx.tanggal));
+  const filteredOprFull = dataOprFull.filter(trx => isWithinRange(trx.tanggal));
+
+  const filteredOpr = filteredOprFull.filter(item => {
+    const ket = (item.keterangan || '').toLowerCase();
+    return !(ket.includes('prive') || ket.includes('bagi hasil') || ket.includes('reward'));
+  });
+  const filteredPrive = filteredOprFull.filter(item => {
+    const ket = (item.keterangan || '').toLowerCase();
+    return (ket.includes('prive') || ket.includes('bagi hasil') || ket.includes('reward'));
+  });
+
+  // Ngitung Totalan Khusus P&L yg udah difilter
+  const pnlPendapatan = filteredJual.reduce((acc, curr) => acc + (Number(curr.hargaJual) || 0), 0);
+  const pnlHPP = filteredJual.reduce((acc, curr) => acc + (Number(curr.hargaModal) || 0), 0);
+  const pnlLabaKotor = pnlPendapatan - pnlHPP;
+  const pnlTotalOpr = filteredOpr.reduce((acc, curr) => acc + (Number(curr.nominal) || 0), 0);
+  const pnlTotalPrive = filteredPrive.reduce((acc, curr) => acc + (Number(curr.nominal) || 0), 0);
+  const pnlLabaBersih = pnlLabaKotor - pnlTotalOpr;
 
   const handleCetakPDF = () => {
     window.print();
@@ -87,87 +132,160 @@ export default function Home() {
 
   return (
     <>
-      {/* 🚀 MODAL LAPORAN P&L (MUNCUL PAS TOMBOL DIKLIK) 🚀 */}
+      {/* 🚀 MODAL LAPORAN P&L RINCI 🚀 */}
       {showPnL && (
         <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto print:bg-white print:overflow-visible flex justify-center py-10 print:py-0">
-          <div className="bg-white w-full max-w-3xl min-h-[1056px] p-12 rounded-2xl shadow-2xl print:shadow-none print:rounded-none print:p-8 relative">
+          <div className="bg-white w-full max-w-4xl min-h-[1056px] p-12 rounded-2xl shadow-2xl print:shadow-none print:rounded-none print:p-8 relative">
             
-            {/* Tombol Aksi (Hilang pas diprint) */}
-            <div className="absolute top-6 right-6 flex gap-3 print:hidden">
-              <button onClick={() => setShowPnL(false)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition">Batal</button>
-              <button onClick={handleCetakPDF} className="px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-xl shadow-lg transition">🖨️ Cetak / Save PDF</button>
+            {/* KOTAK KONTROL (HILANG PAS DIPRINT) */}
+            <div className="mb-8 p-6 bg-pink-50 rounded-2xl border border-pink-100 print:hidden">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-pink-800">⚙️ Pengaturan Laporan (Filter)</h3>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowPnL(false)} className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 font-bold text-sm rounded-lg transition">Tutup</button>
+                  <button onClick={handleCetakPDF} className="px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white font-bold text-sm rounded-lg shadow-md transition">🖨️ Cetak PDF</button>
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Dari Tanggal</label>
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full p-3 rounded-xl border border-pink-200 focus:ring-2 focus:ring-pink-400 outline-none font-medium" />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Sampai Tanggal</label>
+                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full p-3 rounded-xl border border-pink-200 focus:ring-2 focus:ring-pink-400 outline-none font-medium" />
+                </div>
+              </div>
             </div>
 
             {/* HEADER KOP SURAT */}
-            <div className="border-b-4 border-gray-900 pb-6 mb-8 mt-4 print:mt-0">
+            <div className="border-b-4 border-gray-900 pb-4 mb-8">
               <h1 className="text-4xl font-black uppercase tracking-widest text-gray-900">Getmoi Thrifting</h1>
-              <h2 className="text-xl font-bold text-pink-600 mt-1">Laporan Laba Rugi (Profit & Loss)</h2>
-              <p className="text-gray-500 font-medium mt-2">Dicetak pada: {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <h2 className="text-xl font-bold text-pink-600 mt-1">Mutasi Transaksi & Laba Rugi</h2>
+              <p className="text-gray-600 font-medium mt-2">
+                Periode: {startDate && endDate ? `${startDate} s/d ${endDate}` : startDate ? `Dari ${startDate}` : endDate ? `Sampai ${endDate}` : 'Semua Waktu (All Time)'}
+              </p>
             </div>
 
-            {/* ISI LAPORAN AKUNTANSI */}
-            <div className="space-y-6 text-gray-800">
+            {/* ISI LAPORAN MUTASI */}
+            <div className="space-y-8 text-gray-800 text-sm">
               
-              {/* PENDAPATAN */}
+              {/* 1. RINCIAN PENJUALAN */}
               <div>
-                <h3 className="font-bold text-lg mb-2 text-gray-900 border-b border-gray-200 pb-1">1. PENDAPATAN (REVENUE)</h3>
-                <div className="flex justify-between text-base pl-4">
-                  <p>Total Penjualan Kotor</p>
-                  <p className="font-medium">Rp {totalPendapatan.toLocaleString('id-ID')}</p>
+                <div className="bg-gray-900 text-white p-2 px-4 rounded-t-lg flex justify-between items-center">
+                  <h3 className="font-bold text-base tracking-wide">1. RINCIAN PENDAPATAN & HPP</h3>
+                </div>
+                <table className="w-full border-collapse border border-gray-200">
+                  <thead className="bg-gray-100 font-bold text-gray-600 uppercase text-[10px]">
+                    <tr>
+                      <th className="border border-gray-200 p-2 text-left w-1/4">Tanggal</th>
+                      <th className="border border-gray-200 p-2 text-left w-2/4">Item Terjual</th>
+                      <th className="border border-gray-200 p-2 text-right">HPP (Modal)</th>
+                      <th className="border border-gray-200 p-2 text-right">Pendapatan</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredJual.map(trx => (
+                      <tr key={trx.id} className="border-b border-gray-200">
+                        <td className="p-2 border border-gray-200">{trx.tanggal}</td>
+                        <td className="p-2 border border-gray-200 font-medium">{trx.namaBarang}</td>
+                        <td className="p-2 border border-gray-200 text-right text-red-600 font-medium">(Rp {Number(trx.hargaModal).toLocaleString('id-ID')})</td>
+                        <td className="p-2 border border-gray-200 text-right text-emerald-600 font-bold">Rp {Number(trx.hargaJual).toLocaleString('id-ID')}</td>
+                      </tr>
+                    ))}
+                    {filteredJual.length === 0 && <tr><td colSpan="4" className="p-4 text-center italic text-gray-400">Tidak ada transaksi penjualan di periode ini.</td></tr>}
+                  </tbody>
+                  <tfoot className="bg-gray-50 font-black">
+                    <tr>
+                      <td colSpan="2" className="p-2 border border-gray-200 text-right uppercase">Total Penjualan:</td>
+                      <td className="p-2 border border-gray-200 text-right text-red-700">(Rp {pnlHPP.toLocaleString('id-ID')})</td>
+                      <td className="p-2 border border-gray-200 text-right text-emerald-700">Rp {pnlPendapatan.toLocaleString('id-ID')}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+                <div className="flex justify-end mt-2">
+                  <div className="bg-blue-50 border border-blue-200 p-2 px-4 rounded-lg inline-block">
+                    <span className="font-bold mr-4 text-blue-900">LABA KOTOR (GROSS PROFIT):</span>
+                    <span className="font-black text-blue-700 text-lg">Rp {pnlLabaKotor.toLocaleString('id-ID')}</span>
+                  </div>
                 </div>
               </div>
 
-              {/* HPP */}
+              {/* 2. RINCIAN OPERASIONAL */}
               <div>
-                <h3 className="font-bold text-lg mb-2 text-gray-900 border-b border-gray-200 pb-1">2. HARGA POKOK PENJUALAN (COGS)</h3>
-                <div className="flex justify-between text-base pl-4 text-red-600">
-                  <p>Total Modal Barang Terjual</p>
-                  <p className="font-medium">(Rp {totalHPP.toLocaleString('id-ID')})</p>
+                <div className="bg-red-800 text-white p-2 px-4 rounded-t-lg flex justify-between items-center mt-6">
+                  <h3 className="font-bold text-base tracking-wide">2. RINCIAN BEBAN OPERASIONAL</h3>
                 </div>
-              </div>
-
-              {/* LABA KOTOR */}
-              <div className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-200">
-                <p className="font-black text-xl">LABA KOTOR (GROSS PROFIT)</p>
-                <p className="font-black text-xl">Rp {labaKotor.toLocaleString('id-ID')}</p>
-              </div>
-
-              {/* BEBAN OPERASIONAL */}
-              <div>
-                <h3 className="font-bold text-lg mb-2 mt-8 text-gray-900 border-b border-gray-200 pb-1">3. BEBAN OPERASIONAL</h3>
-                <div className="flex justify-between text-base pl-4 text-red-600">
-                  <p>Total Pengeluaran Bisnis Non-Stok</p>
-                  <p className="font-medium">(Rp {operasional.toLocaleString('id-ID')})</p>
-                </div>
+                <table className="w-full border-collapse border border-gray-200">
+                  <thead className="bg-gray-100 font-bold text-gray-600 uppercase text-[10px]">
+                    <tr>
+                      <th className="border border-gray-200 p-2 text-left w-1/4">Tanggal</th>
+                      <th className="border border-gray-200 p-2 text-left w-2/4">Keterangan Beban</th>
+                      <th className="border border-gray-200 p-2 text-right">Nominal Keluar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOpr.map((item, idx) => (
+                      <tr key={idx} className="border-b border-gray-200">
+                        <td className="p-2 border border-gray-200">{item.tanggal}</td>
+                        <td className="p-2 border border-gray-200 font-medium">{item.keterangan}</td>
+                        <td className="p-2 border border-gray-200 text-right text-red-600 font-medium">(Rp {Number(item.nominal).toLocaleString('id-ID')})</td>
+                      </tr>
+                    ))}
+                    {filteredOpr.length === 0 && <tr><td colSpan="3" className="p-4 text-center italic text-gray-400">Tidak ada beban operasional di periode ini.</td></tr>}
+                  </tbody>
+                  <tfoot className="bg-gray-50 font-black">
+                    <tr>
+                      <td colSpan="2" className="p-2 border border-gray-200 text-right uppercase">Total Beban Operasional:</td>
+                      <td className="p-2 border border-gray-200 text-right text-red-700">(Rp {pnlTotalOpr.toLocaleString('id-ID')})</td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
 
               {/* LABA BERSIH (HIGHLIGHT) */}
-              <div className="flex justify-between items-center bg-emerald-50 p-4 rounded-xl border border-emerald-200 mt-4">
-                <p className="font-black text-2xl text-emerald-700">LABA BERSIH (NET PROFIT)</p>
-                <p className="font-black text-2xl text-emerald-700">Rp {labaBersih.toLocaleString('id-ID')}</p>
+              <div className="flex justify-between items-center bg-emerald-100 p-5 rounded-xl border-2 border-emerald-400 my-6 shadow-sm">
+                <p className="font-black text-2xl text-emerald-900 tracking-wide">LABA BERSIH (NET PROFIT)</p>
+                <p className="font-black text-3xl text-emerald-700">Rp {pnlLabaBersih.toLocaleString('id-ID')}</p>
               </div>
 
-              {/* RINGKASAN KAS & PRIVE */}
-              <div>
-                <h3 className="font-bold text-lg mb-2 mt-12 text-gray-900 border-b border-gray-200 pb-1">MUTASI KAS & PENARIKAN</h3>
-                <div className="flex justify-between text-base pl-4 text-purple-600 mb-2">
-                  <p>Penarikan Dana (Prive / Bagi Hasil Partner)</p>
-                  <p className="font-medium">(Rp {prive.toLocaleString('id-ID')})</p>
+              {/* 3. RINCIAN PRIVE */}
+              {filteredPrive.length > 0 && (
+                <div>
+                  <div className="bg-purple-800 text-white p-2 px-4 rounded-t-lg flex justify-between items-center">
+                    <h3 className="font-bold text-base tracking-wide">3. MUTASI PENARIKAN (PRIVE / REWARD)</h3>
+                  </div>
+                  <table className="w-full border-collapse border border-gray-200">
+                    <thead className="bg-gray-100 font-bold text-gray-600 uppercase text-[10px]">
+                      <tr>
+                        <th className="border border-gray-200 p-2 text-left w-1/4">Tanggal</th>
+                        <th className="border border-gray-200 p-2 text-left w-2/4">Keterangan Tarikan</th>
+                        <th className="border border-gray-200 p-2 text-right">Nominal Keluar</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredPrive.map((item, idx) => (
+                        <tr key={idx} className="border-b border-gray-200">
+                          <td className="p-2 border border-gray-200">{item.tanggal}</td>
+                          <td className="p-2 border border-gray-200 font-medium">{item.keterangan}</td>
+                          <td className="p-2 border border-gray-200 text-right text-purple-600 font-medium">(Rp {Number(item.nominal).toLocaleString('id-ID')})</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50 font-black">
+                      <tr>
+                        <td colSpan="2" className="p-2 border border-gray-200 text-right uppercase">Total Penarikan (Prive):</td>
+                        <td className="p-2 border border-gray-200 text-right text-purple-700">(Rp {pnlTotalPrive.toLocaleString('id-ID')})</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-                <div className="flex justify-between text-base pl-4 text-blue-600 mb-2">
-                  <p>Uang Tertahan di Stok Barang (Aset Fisik)</p>
-                  <p className="font-medium">Rp {uangTertahan.toLocaleString('id-ID')}</p>
-                </div>
-                <div className="flex justify-between text-base pl-4 font-bold text-gray-900 mt-4 pt-4 border-t border-gray-200">
-                  <p>SISA KAS FISIK (TUNAI/REKENING)</p>
-                  <p>Rp {sisaKas.toLocaleString('id-ID')}</p>
-                </div>
-              </div>
+              )}
 
             </div>
 
             {/* TANDA TANGAN */}
-            <div className="mt-20 flex justify-end print:mt-32">
+            <div className="mt-16 flex justify-end print:mt-24 break-inside-avoid">
               <div className="text-center">
                 <p className="mb-16 text-gray-600">Disetujui Oleh,</p>
                 <p className="font-bold text-gray-900 underline">Owner / Management</p>
@@ -176,15 +294,15 @@ export default function Home() {
             </div>
 
             {/* FOOTER */}
-            <div className="absolute bottom-8 left-0 right-0 text-center text-xs text-gray-400 print:block">
-              <p>Di-generate secara otomatis oleh Sistem Getmoi Terintegrasi.</p>
+            <div className="mt-8 text-center text-[10px] text-gray-400 border-t border-gray-200 pt-4 print:mt-12 break-inside-avoid">
+              <p>Laporan Mutasi Terintegrasi Getmoi. Dokumen ini sah dan di-generate otomatis oleh sistem.</p>
             </div>
 
           </div>
         </div>
       )}
 
-      {/* 🖥️ DASHBOARD NORMAL (Disembunyikan kalau lagi mode print PDF) 🖥️ */}
+      {/* 🖥️ DASHBOARD NORMAL 🖥️ */}
       <main className="print:hidden p-8 font-sans text-gray-800 max-w-7xl mx-auto">
         <div className="mb-8 mt-4 border-b border-pink-200 pb-6 flex justify-between items-end">
           <div>
@@ -193,7 +311,6 @@ export default function Home() {
           </div>
           <div className="flex gap-4 items-center">
             {!isLoaded && <span className="text-sm font-bold text-blue-500 animate-pulse bg-blue-50 px-4 py-2 rounded-xl">☁️ Sinkronisasi dari Sheets...</span>}
-            {/* TOMBOL SAKTI CETAK P&L */}
             {isLoaded && (
               <button onClick={() => setShowPnL(true)} className="px-5 py-3 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl shadow-lg transition flex items-center gap-2">
                 📄 Buat Laporan P&L
@@ -205,7 +322,6 @@ export default function Home() {
         {isLoaded && (
           <div className="mb-10 animate-fade-in space-y-4">
             
-            {/* BARIS 1: KONDISI KAS & ASET */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-center">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Modal Awal</p>
@@ -229,7 +345,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* BARIS 2: PERFORMA BISNIS */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-center">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Laba Kotor (Untung Jualan)</p>
