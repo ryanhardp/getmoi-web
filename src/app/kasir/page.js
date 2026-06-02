@@ -11,15 +11,14 @@ export default function Kasir() {
 
   const [notaAktif, setNotaAktif] = useState(null);
 
-  // 🛠️ HELPER SAKTI: Preman Pemaksa Format Tanggal
+  // 🛠️ HELPER SAKTI VERSI WARAS: Nggak ada lagi drama time-travel +7 jam!
   const formatTanggal = (tglAsli) => {
     if (!tglAsli) return "";
     const tglStr = String(tglAsli).trim();
 
-    // 1. Saringan buat Angka Serial Kuno Excel (misal: 46172.9958)
+    // 1. CUMA nyembuhin kalau formatnya angka serial kuno Excel (misal: 46172.9958)
     if (!isNaN(Number(tglStr)) && Number(tglStr) > 40000 && Number(tglStr) < 60000) {
       const excelDate = Number(tglStr);
-      // Rumus matematika ngerubah serial Excel ke Tanggal normal
       const dateObj = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
       
       const tgl = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(dateObj);
@@ -27,33 +26,12 @@ export default function Kasir() {
       return `${tgl} ${jam}`;
     }
 
-    // 2. Saringan buat Waktu Luar Negeri (UTC) biar digeser +7 Jam ke WIB
-    try {
-      if (tglStr.includes('-') || tglStr.includes('/')) {
-        let cleanStr = tglStr;
-        // Pancing browser buat tau ini UTC, biar pas dirender otomatis ditambahin 7 jam
-        if (!cleanStr.includes('Z') && !cleanStr.includes('+') && !cleanStr.includes('GMT') && !cleanStr.includes('UTC')) {
-          cleanStr += ' UTC'; 
-        }
-        
-        const dateObj = new Date(cleanStr);
-        if (!isNaN(dateObj.getTime())) {
-          const tgl = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(dateObj);
-          const jam = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(dateObj);
-          return `${tgl} ${jam}`;
-        }
-      }
-    } catch (e) {
-      return tglStr; 
-    }
-
+    // 2. Kalau Google Sheets udah ngasih string teks "2026-06-02 21:43", BIARIN AJA! Itu udah akurat.
     return tglStr;
   };
 
-  // 🚀 BACA GUDANG + PENGHANCUR CACHE VERCEL
   const loadDataCloud = async () => {
     try {
-      // Bikin timestamp unik biar Vercel nggak berani ngasih data cache basi
       const antiCache = new Date().getTime(); 
       const [resGudang, resJual] = await Promise.all([
         fetch(`/api/gudang?t=${antiCache}`).then(r => r.json()),
@@ -63,7 +41,6 @@ export default function Kasir() {
       if(resGudang.success) setDbBarang(resGudang.data.filter(b => b.stok > 0)); 
       
       if(resJual.success) {
-        // Eksekusi massal obat tanggal ke semua riwayat transaksi
         const dataJualSehat = resJual.data.map(trx => ({
           ...trx,
           tanggal: formatTanggal(trx.tanggal)
@@ -110,7 +87,6 @@ export default function Kasir() {
     const gabunganKode = keranjang.map(i => i.kodeItem).join('+');
     const gabunganNama = keranjang.map(i => `1x ${i.namaBarang}`).join(' + ');
     
-    // Paku mati pembuatan transaksi baru di Jam WIB
     const now = new Date();
     const tglWIB = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
     const jamWIB = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
@@ -189,7 +165,6 @@ export default function Kasir() {
 
   return (
     <>
-      {/* 🚀 MODAL NOTA THERMAL 🚀 */}
       {notaAktif && (
         <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto flex justify-center py-10 print:absolute print:inset-0 print:block print:bg-white print:py-0 print:overflow-visible">
           
@@ -241,7 +216,6 @@ export default function Kasir() {
         </div>
       )}
 
-      {/* 🖥️ HALAMAN KASIR NORMAL 🖥️ */}
       <main className="print:hidden p-8 font-sans text-gray-800 max-w-7xl mx-auto">
         <div className="space-y-6">
           
@@ -330,7 +304,6 @@ export default function Kasir() {
             </div>
           </div>
 
-          {/* TABEL RIWAYAT PENJUALAN KASIR */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-pink-100 mt-6">
             <div className="flex justify-between items-center mb-4 border-b border-pink-50 pb-2">
               <h2 className="text-lg font-bold text-gray-800">🧾 Riwayat Penjualan Terakhir</h2>
