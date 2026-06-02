@@ -288,6 +288,31 @@ export default function Home() {
                 </div>
               )}
 
+              {/* 🚀 BAGIAN BARU: SISA KAS DAN ASET 🚀 */}
+              <div className="mt-8 break-inside-avoid">
+                <div className="bg-blue-900 text-white p-2 px-4 rounded-t-lg flex justify-between items-center">
+                  <h3 className="font-bold text-base tracking-wide">4. POSISI KAS & ASET TERAKHIR (REAL-TIME)</h3>
+                </div>
+                <table className="w-full border-collapse border border-gray-200 text-base">
+                  <tbody>
+                    <tr className="border-b border-gray-200">
+                      <td className="p-3 border border-gray-200 font-medium w-3/4">Modal Awal Sistem</td>
+                      <td className="p-3 border border-gray-200 text-right font-bold text-gray-700">Rp {MODAL_AWAL.toLocaleString('id-ID')}</td>
+                    </tr>
+                    <tr className="border-b border-gray-200">
+                      <td className="p-3 border border-gray-200 font-medium">Nilai Aset di Stok Baju (Uang Tertahan)</td>
+                      <td className="p-3 border border-gray-200 text-right font-bold text-blue-600">Rp {uangTertahan.toLocaleString('id-ID')}</td>
+                    </tr>
+                  </tbody>
+                  <tfoot className="bg-blue-50 font-black text-lg">
+                    <tr>
+                      <td className="p-4 border border-gray-200 text-right uppercase text-blue-900">SISA KAS FISIK (TUNAI/REKENING) SAAT INI:</td>
+                      <td className="p-4 border border-gray-200 text-right text-blue-700">Rp {sisaKas.toLocaleString('id-ID')}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
             </div>
 
             <div className="mt-16 flex justify-end print:mt-24 break-inside-avoid">
