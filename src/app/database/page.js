@@ -18,7 +18,6 @@ export default function DatabaseAdmin() {
       if (respon.success) {
         const parsedData = respon.data.map(item => {
           const isPack = String(item.kodeItem).startsWith('P');
-          
           const hargaBersih = Number(String(item.hargaModal).replace(/[^0-9]/g, '')) || 0;
           const stokBersih = Number(item.stok) || 0;
 
@@ -38,9 +37,9 @@ export default function DatabaseAdmin() {
   };
 
   useEffect(() => {
-    const kamusTersimpan = localStorage.getItem('kamus_getmoiclothes');
-    if (kamusTersimpan) setKamusKode(JSON.parse(kamusTersimpan));
-    else setKamusKode({ kemeja: 'A', inner: 'B', dress: 'D', cardigan: 'E', vest: 'F', packaging: 'P', plastik: 'P', print: 'P' });
+    // Bersihin memori sesat masa lalu
+    localStorage.removeItem('kamus_getmoiclothes');
+    setKamusKode({ kemeja: 'A', inner: 'B', dress: 'D', cardigan: 'E', vest: 'F', packaging: 'P', plastik: 'P', print: 'P' });
     
     loadDataCloud().then(() => setIsLoaded(true));
   }, []);
@@ -59,34 +58,39 @@ export default function DatabaseAdmin() {
   const [stok, setStok] = useState(1);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  // 🚀 LOGIKA BARU: AUTO-GENERATE HURUF BARU BUAT BARANG ALIEN 👽
+  // 🚀 LOGIKA GENERATOR FIX: KUNCI STRICT KATA PERTAMA DOANG!
   useEffect(() => {
     if (isEditMode) return; 
     if (inputNama.trim().length > 0) {
-      const kataPertama = inputNama.trim().split(' ')[0].toLowerCase();
+      const kataPertamaInput = inputNama.trim().split(' ')[0].toLowerCase();
       let prefixAkurat = '';
       
-      const barangSama = daftarBarang.find(b => b.namaBarang.toLowerCase().includes(kataPertama));
+      // Murni ngecek kata pertama VS kata pertama (Biar Kemeja Blouse ga ganggu Blouse)
+      const barangSama = daftarBarang.find(b => {
+        if (!b.namaBarang) return false;
+        const kataPertamaDB = b.namaBarang.trim().split(' ')[0].toLowerCase();
+        return kataPertamaDB === kataPertamaInput;
+      });
 
       if (barangSama && barangSama.kodeItem) {
-        // 1. Kalo udah ada di database, curi hurufnya
+        // Kalau nemu, culik huruf depannya
         prefixAkurat = barangSama.kodeItem.replace(/[0-9]/g, '').toUpperCase();
-      } else if (kamusKode[kataPertama]) {
-        // 2. Kalo ada di kamus memori, pake itu
-        prefixAkurat = kamusKode[kataPertama].toUpperCase();
+      } else if (kamusKode[kataPertamaInput]) {
+        // Cek kamus cadangan
+        prefixAkurat = kamusKode[kataPertamaInput].toUpperCase();
       } else if (kategori === 'Packaging') {
         prefixAkurat = 'P';
       } else {
-        // 3. BARANG BARU NIH! Cari huruf abjad yang masih nganggur
+        // BARANG ALIEN: Ngabsen huruf A-Z yang nganggur
         const hurufKepake = new Set();
         daftarBarang.forEach(b => { if(b.kodeItem) hurufKepake.add(b.kodeItem.replace(/[0-9]/g, '').toUpperCase()) });
         Object.values(kamusKode).forEach(val => hurufKepake.add(val.toUpperCase()));
 
         const abjad = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
-        // Cari huruf pertama dari A-Z yang BELUM kepake di gudang
         prefixAkurat = abjad.find(huruf => !hurufKepake.has(huruf)) || 'X'; 
       }
 
+      // Cari angka urutan selanjutnya
       const barangSejenis = daftarBarang.filter(item => item.kodeItem && item.kodeItem.toUpperCase().startsWith(prefixAkurat));
       let angkaTertinggi = 0;
       barangSejenis.forEach(b => {
@@ -118,7 +122,7 @@ export default function DatabaseAdmin() {
       if (respon.success) {
         alert(isEditMode ? "✅ Data berhasil di-update ke awan!" : "✅ Barang baru berhasil disimpen ke awan!");
         
-        // 🚀 SAVE KAMUS BARU: Ini yang bikin besok-besok Jaket tetep pake kode yang sama
+        // Simpan ke kamus kalau barang baru
         const kataPertama = inputNama.trim().split(' ')[0].toLowerCase();
         if (!isEditMode && !kamusKode[kataPertama]) {
           setKamusKode(prev => ({ ...prev, [kataPertama]: kodeItem.charAt(0) }));
