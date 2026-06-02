@@ -20,13 +20,38 @@ export default function Home() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
+  // 🛠️ HELPER MATEMATIKA MURNI (Disamain persis kayak di Kasir biar aman)
+  const formatTanggal = (tglAsli) => {
+    if (!tglAsli) return "";
+    const tglStr = String(tglAsli).trim();
+
+    if (/^\d+(\.\d+)?$/.test(tglStr)) {
+      const excelDate = parseFloat(tglStr);
+      if (excelDate > 40000 && excelDate < 60000) {
+        const utcDays = excelDate - 25569;
+        const dateObj = new Date(Math.round(utcDays * 86400 * 1000));
+        
+        const pad = (n) => n.toString().padStart(2, '0');
+        const yyyy = dateObj.getUTCFullYear();
+        const mm = pad(dateObj.getUTCMonth() + 1);
+        const dd = pad(dateObj.getUTCDate());
+        const hh = pad(dateObj.getUTCHours());
+        const min = pad(dateObj.getUTCMinutes());
+        
+        return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+      }
+    }
+    return tglStr;
+  };
+
   useEffect(() => {
     const tarikSemuaData = async () => {
       try {
+        const antiCache = new Date().getTime(); 
         const [resGudang, resOpr, resJual] = await Promise.all([
-          fetch('/api/gudang').then(r => r.json()),
-          fetch('/api/operasional').then(r => r.json()),
-          fetch('/api/kasir').then(r => r.json())
+          fetch(`/api/gudang?t=${antiCache}`).then(r => r.json()),
+          fetch(`/api/operasional?t=${antiCache}`).then(r => r.json()),
+          fetch(`/api/kasir?t=${antiCache}`).then(r => r.json())
         ]);
 
         let aset = 0;
@@ -44,8 +69,13 @@ export default function Home() {
         let opr = 0;
         let tarikUntung = 0;
         if(resOpr.success) {
-          setDataOprFull(resOpr.data); 
-          resOpr.data.forEach(item => { 
+          const dataOprSehat = resOpr.data.map(item => ({
+            ...item,
+            tanggal: formatTanggal(item.tanggal)
+          }));
+          setDataOprFull(dataOprSehat); 
+          
+          dataOprSehat.forEach(item => { 
             const ket = (item.keterangan || '').toLowerCase();
             if (ket.includes('prive') || ket.includes('bagi hasil') || ket.includes('reward')) {
               tarikUntung += (item.nominal || 0);
@@ -59,11 +89,16 @@ export default function Home() {
 
         let profit = 0;
         if(resJual.success) {
-          setDataJualFull(resJual.data); 
-          resJual.data.forEach(trx => { 
+          const dataJualSehat = resJual.data.map(trx => ({
+            ...trx,
+            tanggal: formatTanggal(trx.tanggal)
+          }));
+          setDataJualFull(dataJualSehat); 
+          
+          dataJualSehat.forEach(trx => { 
             profit += (Number(trx.profit) || 0); 
           });
-          setRiwayatTransaksi(resJual.data.slice(0, 5));
+          setRiwayatTransaksi(dataJualSehat.slice(0, 5));
         }
         setLabaKotor(profit);
 
@@ -185,7 +220,6 @@ export default function Home() {
                       <th className="border border-gray-200 p-2 text-right text-blue-600">Profit Bersih</th>
                     </tr>
                   </thead>
-                  {/* Totalan dipindah ke dalam tbody biar cuma muncul 1 kali di paling bawah data */}
                   <tbody>
                     {filteredJual.map((trx, i) => {
                       const hpp = Number(trx.hargaModal) || 0;
@@ -203,7 +237,6 @@ export default function Home() {
                     })}
                     {filteredJual.length === 0 && <tr><td colSpan="5" className="p-4 text-center italic text-gray-400">Tidak ada transaksi penjualan di periode ini.</td></tr>}
                     
-                    {/* Baris Grand Total */}
                     {filteredJual.length > 0 && (
                       <tr className="bg-gray-50 font-black border-t-2 border-gray-400">
                         <td colSpan="2" className="p-3 border border-gray-200 text-right uppercase">GRAND TOTAL PENJUALAN:</td>
@@ -244,7 +277,6 @@ export default function Home() {
                     ))}
                     {filteredOpr.length === 0 && <tr><td colSpan="3" className="p-4 text-center italic text-gray-400">Tidak ada beban operasional di periode ini.</td></tr>}
                     
-                    {/* Baris Grand Total */}
                     {filteredOpr.length > 0 && (
                       <tr className="bg-gray-50 font-black border-t-2 border-gray-400">
                         <td colSpan="2" className="p-3 border border-gray-200 text-right uppercase">GRAND TOTAL BEBAN OPERASIONAL:</td>
@@ -282,7 +314,6 @@ export default function Home() {
                         </tr>
                       ))}
                       
-                      {/* Baris Grand Total */}
                       <tr className="bg-gray-50 font-black border-t-2 border-gray-400">
                         <td colSpan="2" className="p-3 border border-gray-200 text-right uppercase">GRAND TOTAL PENARIKAN (PRIVE):</td>
                         <td className="p-3 border border-gray-200 text-right text-purple-700">(Rp {pnlTotalPrive.toLocaleString('id-ID')})</td>
@@ -332,7 +363,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* 🖥️ DASHBOARD NORMAL 🖥️ */}
       <main className="print:hidden p-8 font-sans text-gray-800 max-w-7xl mx-auto">
         <div className="mb-8 mt-4 border-b border-pink-200 pb-6 flex justify-between items-end">
           <div>
@@ -351,24 +381,20 @@ export default function Home() {
 
         {isLoaded && (
           <div className="mb-10 animate-fade-in space-y-4">
-            
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-center">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Modal Awal</p>
                 <h3 className="text-2xl font-black text-gray-800">Rp {MODAL_AWAL.toLocaleString('id-ID')}</h3>
               </div>
-              
               <div className="bg-gradient-to-br from-pink-500 to-rose-500 p-5 rounded-2xl shadow-lg shadow-pink-500/20 text-white flex flex-col justify-center relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-white opacity-10 rounded-full blur-xl transform translate-x-8 -translate-y-8"></div>
                 <p className="text-[10px] font-bold text-pink-100 uppercase tracking-widest mb-1">Sisa Kas Fisik di Tangan</p>
                 <h3 className="text-2xl font-black text-white">Rp {sisaKas.toLocaleString('id-ID')}</h3>
               </div>
-              
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-blue-100 flex flex-col justify-center">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Uang Tertahan di Stok</p>
                 <h3 className="text-2xl font-black text-blue-600">Rp {uangTertahan.toLocaleString('id-ID')}</h3>
               </div>
-
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-amber-100 flex flex-col justify-center">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Total Stok Baju (Fisik)</p>
                 <h3 className="text-2xl font-black text-amber-500">{totalStokBaju} <span className="text-sm font-bold text-gray-500">pcs</span></h3>
@@ -380,18 +406,15 @@ export default function Home() {
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Laba Kotor (Untung Jualan)</p>
                 <h3 className="text-2xl font-black text-gray-800">Rp {labaKotor.toLocaleString('id-ID')}</h3>
               </div>
-              
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-red-100 flex flex-col justify-center">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Operasional (Beban Bisnis)</p>
                 <h3 className="text-2xl font-black text-red-500">- Rp {operasional.toLocaleString('id-ID')}</h3>
               </div>
-              
               <div className="bg-gradient-to-br from-emerald-400 to-teal-500 p-5 rounded-2xl shadow-lg shadow-emerald-500/20 text-white flex flex-col justify-center relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-white opacity-10 rounded-full blur-xl transform translate-x-8 -translate-y-8"></div>
                 <p className="text-[10px] font-bold text-emerald-100 uppercase tracking-widest mb-1">Laba Bersih (Net Profit)</p>
                 <h3 className="text-2xl font-black text-white">+ Rp {labaBersih.toLocaleString('id-ID')}</h3>
               </div>
-
               <div className="bg-white p-5 rounded-2xl shadow-sm border border-purple-100 flex flex-col justify-center">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Tarik Untung (Prive/Reward)</p>
                 <h3 className="text-2xl font-black text-purple-600">- Rp {prive.toLocaleString('id-ID')}</h3>
