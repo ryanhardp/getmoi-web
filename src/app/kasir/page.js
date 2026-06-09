@@ -16,11 +16,9 @@ export default function Kasir() {
     if (!tglAsli) return "";
     const tglStr = String(tglAsli).trim();
 
-    // Deteksi pasti angka serial Excel/Google Sheets
     if (/^\d+(\.\d+)?$/.test(tglStr)) {
       const excelDate = parseFloat(tglStr);
       if (excelDate > 40000 && excelDate < 60000) {
-        // Konversi matematika murni (tanpa diganggu zona waktu browser)
         const utcDays = excelDate - 25569;
         const dateObj = new Date(Math.round(utcDays * 86400 * 1000));
         
@@ -34,7 +32,6 @@ export default function Kasir() {
         return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
       }
     }
-    // Kalau emang udah teks tanggal normal, biarin aja
     return tglStr;
   };
 
@@ -46,7 +43,20 @@ export default function Kasir() {
         fetch(`/api/kasir?t=${antiCache}`).then(r => r.json())
       ]);
       
-      if(resGudang.success) setDbBarang(resGudang.data.filter(b => b.stok > 0)); 
+      if(resGudang.success) {
+        // 1. Ambil yang stoknya masih ada
+        const barangReady = resGudang.data.filter(b => b.stok > 0);
+        
+        // 2. Balik urutannya (Inputan terakhir jadi di paling atas)
+        const barangTerbaru = [...barangReady].reverse();
+        
+        // 3. Pisahin Packaging dan Baju Biasa
+        const packaging = barangTerbaru.filter(b => String(b.kodeItem).toUpperCase().startsWith('P') || (b.kategori && String(b.kategori).toUpperCase() === 'PACKAGING'));
+        const baju = barangTerbaru.filter(b => !(String(b.kodeItem).toUpperCase().startsWith('P') || (b.kategori && String(b.kategori).toUpperCase() === 'PACKAGING')));
+        
+        // 4. Gabungin: Packaging di pucuk, disusul baju terbaru
+        setDbBarang([...packaging, ...baju]);
+      }
       
       if(resJual.success) {
         const dataJualSehat = resJual.data.map(trx => ({
